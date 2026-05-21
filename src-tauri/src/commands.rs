@@ -54,3 +54,13 @@ pub fn test_translate_api(
 pub fn replace_with_translation(text: String) -> CommandResult<()> {
     translate::replace_with_translation(text)
 }
+
+#[tauri::command]
+pub fn copy_to_clipboard(text: String) -> CommandResult<()> {
+    translate::copy_to_clipboard(text)
+}
+
+#[tauri::command]
+pub fn hide_translation_toast() {
+    translate::hide_translation_toast();
+}

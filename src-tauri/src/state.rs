@@ -1,4 +1,7 @@
-use crate::{autoreplace, capslock, config::Config, keyboard_hook::KeyboardHook, translate};
+use crate::{
+    autoreplace, capslock, config::Config, keyboard_hook::KeyboardHook,
+    libretranslate_server::LibreTranslateServer, translate,
+};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -8,6 +11,7 @@ pub struct AppState {
     config: Mutex<Config>,
     caps_paused: AtomicBool,
     keyboard_hook: Mutex<Option<KeyboardHook>>,
+    libretranslate_server: LibreTranslateServer,
 }
 
 impl AppState {
@@ -21,6 +25,7 @@ impl AppState {
             config: Mutex::new(config),
             caps_paused: AtomicBool::new(caps_paused),
             keyboard_hook: Mutex::new(None),
+            libretranslate_server: LibreTranslateServer::new(),
         }
     }
 
@@ -75,5 +80,13 @@ impl AppState {
         if let Ok(mut hook) = self.keyboard_hook.lock() {
             hook.take();
         }
+    }
+
+    pub fn start_libretranslate_server(&self) {
+        self.libretranslate_server.start();
+    }
+
+    pub fn stop_libretranslate_server(&self) {
+        self.libretranslate_server.stop();
     }
 }

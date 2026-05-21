@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod autoreplace;
 #[allow(dead_code)]
 mod autostart;
@@ -5,6 +7,7 @@ mod capslock;
 mod commands;
 mod config;
 mod keyboard_hook;
+mod libretranslate_server;
 mod state;
 mod translate;
 mod tray;
@@ -16,21 +19,22 @@ use tauri::Manager;
 fn main() {
     env_logger::init();
 
+    let config = config::load_config().unwrap_or_else(|error| {
+        log::error!("failed to load config, using defaults: {error}");
+        Config::default()
+    });
+    let state = AppState::new(config);
+
     tauri::Builder::default()
+        .manage(state)
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             let _ = window::show_settings(app);
         }))
         .setup(|app| {
-            let config = config::load_config().unwrap_or_else(|error| {
-                log::error!("failed to load config, using defaults: {error}");
-                Config::default()
-            });
-
-            let state = AppState::new(config);
             translate::set_app_handle(app.handle().clone());
+            let state = app.state::<AppState>();
             state.install_keyboard_hook()?;
-
-            app.manage(state);
+            state.start_libretranslate_server();
             tray::setup_tray(&app.handle())?;
 
             Ok(())
@@ -52,6 +56,8 @@ fn main() {
             commands::is_auto_start,
             commands::test_translate_api,
             commands::replace_with_translation,
+            commands::copy_to_clipboard,
+            commands::hide_translation_toast,
         ])
         .build(tauri::generate_context!())
         .expect("error while building KeyTweak")
@@ -59,6 +65,7 @@ fn main() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.uninstall_keyboard_hook();
+                    state.stop_libretranslate_server();
                 }
             }
         });

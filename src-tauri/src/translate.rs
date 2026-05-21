@@ -62,6 +62,7 @@ struct CtrlCState {
 struct TranslationToastPayload {
     original: String,
     translated: String,
+    source_lang: String,
     target_lang: String,
     reverse: bool,
 }
@@ -209,6 +210,7 @@ fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
         Ok(translated) => show_translation_toast(TranslationToastPayload {
             original: text,
             translated,
+            source_lang: detected.to_string(),
             target_lang: target,
             reverse,
         }),
@@ -219,7 +221,10 @@ fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
 /// Lightweight language detection: returns "ru" if the text contains
 /// any Cyrillic letter, otherwise "en". Good enough for a binary RU/EN choice.
 fn detect_language(text: &str) -> &'static str {
-    if text.chars().any(|c| matches!(c, '\u{0400}'..='\u{04FF}' | '\u{0500}'..='\u{052F}')) {
+    if text
+        .chars()
+        .any(|c| matches!(c, '\u{0400}'..='\u{04FF}' | '\u{0500}'..='\u{052F}'))
+    {
         "ru"
     } else {
         "en"
@@ -275,11 +280,7 @@ fn translate_text(
     Ok(response.translated_text)
 }
 
-pub fn test_translate_api(
-    server_url: &str,
-    api_key: &str,
-    target: &str,
-) -> Result<String, String> {
+pub fn test_translate_api(server_url: &str, api_key: &str, target: &str) -> Result<String, String> {
     let server_url = server_url.trim();
     if server_url.is_empty() {
         return Err("Адрес сервера LibreTranslate не настроен".to_string());
@@ -333,6 +334,25 @@ pub fn replace_with_translation(text: String) -> Result<(), String> {
     Ok(())
 }
 
+pub fn copy_to_clipboard(text: String) -> Result<(), String> {
+    if text.is_empty() {
+        return Err("нечего копировать".to_string());
+    }
+
+    Clipboard::new()
+        .map_err(|error| format!("не удалось открыть буфер обмена ({error})"))?
+        .set_text(text)
+        .map_err(|error| format!("не удалось записать в буфер обмена ({error})"))
+}
+
+pub fn hide_translation_toast() {
+    if let Some(app) = APP_HANDLE.get() {
+        if let Some(window) = app.get_webview_window(TOAST_LABEL) {
+            let _ = window.hide();
+        }
+    }
+}
+
 fn show_translation_toast(payload: TranslationToastPayload) {
     let Some(app) = APP_HANDLE.get() else {
         return;
@@ -351,6 +371,7 @@ fn show_translation_error(message: &str) {
     show_translation_toast(TranslationToastPayload {
         original: String::new(),
         translated: message.to_string(),
+        source_lang: String::new(),
         target_lang: String::new(),
         reverse: false,
     });
@@ -364,10 +385,12 @@ fn position_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::Result<()
     let monitor_size = monitor.size();
     let window_size = window.outer_size()?;
 
-    let cursor = cursor_position().unwrap_or_else(|| PhysicalPosition::new(
-        monitor_pos.x + monitor_size.width as i32 / 2,
-        monitor_pos.y + monitor_size.height as i32 / 2,
-    ));
+    let cursor = cursor_position().unwrap_or_else(|| {
+        PhysicalPosition::new(
+            monitor_pos.x + monitor_size.width as i32 / 2,
+            monitor_pos.y + monitor_size.height as i32 / 2,
+        )
+    });
 
     // Default offset: place the toast slightly below-right of the cursor.
     const OFFSET_X: i32 = 16;
@@ -524,5 +547,35 @@ mod tests {
         assert_eq!(detect_language("Hello, мир!"), "ru");
         assert_eq!(detect_language(""), "en");
         assert_eq!(detect_language("123 !@#"), "en");
+    }
+
+    #[test]
+    fn libretranslate_request_omits_empty_api_key() {
+        let request = LibreTranslateRequest {
+            q: "hello",
+            source: "auto",
+            target: "ru",
+            format: "text",
+            api_key: None,
+        };
+
+        let json = serde_json::to_value(request).expect("serialize request");
+
+        assert_eq!(json["q"], "hello");
+        assert_eq!(json["source"], "auto");
+        assert_eq!(json["target"], "ru");
+        assert!(json.get("api_key").is_none());
+    }
+
+    #[test]
+    fn test_translate_api_validates_local_inputs_before_network() {
+        assert_eq!(
+            test_translate_api("", "", "ru"),
+            Err("Адрес сервера LibreTranslate не настроен".to_string())
+        );
+        assert_eq!(
+            test_translate_api("http://127.0.0.1:5000", "", "de"),
+            Err("целевой язык должен быть 'ru' или 'en'".to_string())
+        );
     }
 }

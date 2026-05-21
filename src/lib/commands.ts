@@ -89,3 +89,13 @@ export function replaceWithTranslation(text: string) {
   if (!inTauri()) return Promise.resolve();
   return invoke<void>("replace_with_translation", { text });
 }
+
+export function copyToClipboard(text: string) {
+  if (!inTauri()) return navigator.clipboard?.writeText(text) ?? Promise.resolve();
+  return invoke<void>("copy_to_clipboard", { text });
+}
+
+export function hideTranslationToast() {
+  if (!inTauri()) return Promise.resolve();
+  return invoke<void>("hide_translation_toast");
+}
