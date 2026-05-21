@@ -27,6 +27,7 @@ const defaultConfig: Config = {
   translate: {
     server_url: "http://127.0.0.1:5000",
     api_key: "",
+    auto_detect_language: true,
     target_language: "ru",
     hotkey_translate: "ctrl+c+c",
     hotkey_reverse: "ctrl+shift+c",
@@ -42,10 +43,19 @@ function inTauri() {
 
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`IPC call timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(
+      () => reject(new Error(`IPC call timed out after ${ms}ms`)),
+      ms,
+    );
     promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
     );
   });
 }
@@ -80,7 +90,11 @@ export function isAutoStart() {
   return invoke<boolean>("is_auto_start");
 }
 
-export function testTranslateApi(serverUrl: string, apiKey: string, target: string) {
+export function testTranslateApi(
+  serverUrl: string,
+  apiKey: string,
+  target: string,
+) {
   if (!inTauri()) return Promise.resolve(target === "ru" ? "привет" : "hello");
   return invoke<string>("test_translate_api", { serverUrl, apiKey, target });
 }
@@ -91,7 +105,8 @@ export function replaceWithTranslation(text: string) {
 }
 
 export function copyToClipboard(text: string) {
-  if (!inTauri()) return navigator.clipboard?.writeText(text) ?? Promise.resolve();
+  if (!inTauri())
+    return navigator.clipboard?.writeText(text) ?? Promise.resolve();
   return invoke<void>("copy_to_clipboard", { text });
 }
 

@@ -149,6 +149,8 @@ pub struct TranslateConfig {
     pub server_url: String,
     #[serde(default)]
     pub api_key: String,
+    #[serde(default = "default_true")]
+    pub auto_detect_language: bool,
     #[serde(default = "default_target_language")]
     pub target_language: String,
     #[serde(default = "default_translate_hotkey")]
@@ -162,6 +164,7 @@ impl Default for TranslateConfig {
         Self {
             server_url: default_server_url(),
             api_key: String::new(),
+            auto_detect_language: true,
             target_language: default_target_language(),
             hotkey_translate: default_translate_hotkey(),
             hotkey_reverse: default_reverse_hotkey(),

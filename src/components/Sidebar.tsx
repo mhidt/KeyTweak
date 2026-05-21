@@ -1,16 +1,27 @@
 import { Ban, FileText, Globe, Key, Keyboard, Zap } from "lucide-react";
 import { cn } from "../lib/utils";
 
-export type TabId = "caps" | "autoreplace" | "translate" | "exceptions" | "api" | "general";
+export type TabId =
+  | "caps"
+  | "autoreplace"
+  | "translate"
+  | "exceptions"
+  | "api"
+  | "general";
 
 const items = [
-  { id: "caps", label: "Переключение Caps Lock", icon: Keyboard, group: "Модули" },
+  { id: "caps", label: "Caps Lock", icon: Keyboard, group: "Модули" },
   { id: "autoreplace", label: "Автозамена", icon: FileText, group: "Модули" },
   { id: "translate", label: "Перевод", icon: Globe, group: "Модули" },
   { id: "exceptions", label: "Исключения", icon: Ban, group: "Модули" },
   { id: "api", label: "API-ключи", icon: Key, group: "Система" },
   { id: "general", label: "Общие", icon: Zap, group: "Система" },
-] satisfies Array<{ id: TabId; label: string; icon: typeof Keyboard; group: string }>;
+] satisfies Array<{
+  id: TabId;
+  label: string;
+  icon: typeof Keyboard;
+  group: string;
+}>;
 
 interface SidebarProps {
   activeTab: TabId;
@@ -30,7 +41,12 @@ export function Sidebar({ activeTab, onChange }: SidebarProps) {
         return (
           <div key={item.id}>
             {showGroup ? (
-              <div className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pt-0">
+              <div
+                className={cn(
+                  "px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground first:pt-0",
+                  item.group === "Система" && "mt-4",
+                )}
+              >
                 {item.group}
               </div>
             ) : null}
@@ -53,4 +69,3 @@ export function Sidebar({ activeTab, onChange }: SidebarProps) {
     </aside>
   );
 }
-

@@ -7,7 +7,6 @@ use tauri::{
 };
 
 const TRAY_ID: &str = "main";
-const MENU_STATUS_ID: &str = "caps_status";
 const MENU_SETTINGS_ID: &str = "settings";
 const MENU_PAUSE_ID: &str = "pause_caps";
 const MENU_EXIT_ID: &str = "exit";
@@ -33,7 +32,6 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
             MENU_EXIT_ID => {
                 app.exit(0);
             }
-            MENU_STATUS_ID => {}
             _ => {}
         })
         .build(app)?;
@@ -80,23 +78,17 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .try_state::<AppState>()
         .map(|state| state.caps_paused())
         .unwrap_or(false);
-    let status_text = if paused {
-        "● Переключение Caps Lock: Пауза"
-    } else {
-        "● Переключение Caps Lock: Активно"
-    };
     let pause_text = if paused {
         "Возобновить переключение Caps Lock"
     } else {
         "Приостановить переключение Caps Lock"
     };
 
-    let status = MenuItem::with_id(app, MENU_STATUS_ID, status_text, false, None::<&str>)?;
     let settings = MenuItem::with_id(app, MENU_SETTINGS_ID, "Настройки...", true, None::<&str>)?;
     let pause = MenuItem::with_id(app, MENU_PAUSE_ID, pause_text, true, None::<&str>)?;
     let exit = MenuItem::with_id(app, MENU_EXIT_ID, "Выход", true, None::<&str>)?;
 
-    Menu::with_items(app, &[&status, &settings, &pause, &exit])
+    Menu::with_items(app, &[&settings, &pause, &exit])
 }
 
 fn tray_tooltip<R: Runtime>(app: &AppHandle<R>) -> String {

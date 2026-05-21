@@ -1,5 +1,4 @@
 import type { Config, RealCapsCombo, SwitchMode } from "../types/config";
-import { Checkbox } from "./ui/checkbox";
 import { Label } from "./ui/label";
 import { Select } from "./ui/select";
 
@@ -38,11 +37,15 @@ export function CapsLockSettings({ config, onChange }: Props) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="real-caps-combo">Комбинация для настоящего Caps Lock</Label>
+        <Label htmlFor="real-caps-combo">
+          Комбинация для настоящего Caps Lock
+        </Label>
         <Select
           id="real-caps-combo"
           value={config.caps_lock.real_caps_combo}
-          onChange={(event) => updateCaps({ real_caps_combo: event.target.value as RealCapsCombo })}
+          onChange={(event) =>
+            updateCaps({ real_caps_combo: event.target.value as RealCapsCombo })
+          }
           className="min-w-[220px]"
         >
           <option value="shift_caps">Shift + Caps Lock</option>
@@ -50,13 +53,6 @@ export function CapsLockSettings({ config, onChange }: Props) {
           <option value="ctrl_caps">Ctrl + Caps Lock</option>
         </Select>
       </div>
-
-      <Checkbox
-        checked={config.caps_lock.auto_start}
-        onCheckedChange={(auto_start) => updateCaps({ auto_start })}
-        label="Запускать вместе с Windows"
-      />
     </>
   );
 }
-

@@ -40,6 +40,7 @@ export interface ProgramException {
 export interface TranslateConfig {
   server_url: string;
   api_key: string;
+  auto_detect_language: boolean;
   target_language: string;
   hotkey_translate: string;
   hotkey_reverse: string;
@@ -48,4 +49,3 @@ export interface TranslateConfig {
 export interface GeneralConfig {
   app_language: string;
 }
-

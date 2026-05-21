@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getConfig, isAutoStart, setAutoStart, setConfig } from "./lib/commands";
+import {
+  getConfig,
+  isAutoStart,
+  setAutoStart,
+  setConfig,
+} from "./lib/commands";
 import type { Config } from "./types/config";
 import { ApiKeysSettings } from "./components/ApiKeysSettings";
 import { AutoReplaceSettings } from "./components/AutoReplaceSettings";
@@ -25,15 +30,21 @@ export function App() {
     async function run() {
       try {
         const loaded = await getConfig();
-        const autoStart = await isAutoStart().catch(() => loaded.caps_lock.auto_start);
-        const merged = { ...loaded, caps_lock: { ...loaded.caps_lock, auto_start: autoStart } };
+        const autoStart = await isAutoStart().catch(
+          () => loaded.caps_lock.auto_start,
+        );
+        const merged = {
+          ...loaded,
+          caps_lock: { ...loaded.caps_lock, auto_start: autoStart },
+        };
         if (!cancelled) {
           setConfigState(merged);
           setSavedConfig(merged);
         }
       } catch (error) {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           setLoadError(message);
         }
       }
@@ -52,7 +63,7 @@ export function App() {
   const title = useMemo(() => {
     switch (activeTab) {
       case "caps":
-        return "Переключение языка Caps Lock";
+        return "Caps Lock";
       case "autoreplace":
         return "Автозамена";
       case "translate":
@@ -105,14 +116,20 @@ export function App() {
           </div>
         );
       }
-      return <div className="px-8 py-6 text-sm text-muted-foreground">Загрузка настроек...</div>;
+      return (
+        <div className="px-8 py-6 text-sm text-muted-foreground">
+          Загрузка настроек...
+        </div>
+      );
     }
 
     switch (activeTab) {
       case "caps":
         return <CapsLockSettings config={config} onChange={setConfigState} />;
       case "autoreplace":
-        return <AutoReplaceSettings config={config} onChange={setConfigState} />;
+        return (
+          <AutoReplaceSettings config={config} onChange={setConfigState} />
+        );
       case "translate":
         return <TranslateSettings config={config} onChange={setConfigState} />;
       case "exceptions":
@@ -129,7 +146,13 @@ export function App() {
       <Sidebar activeTab={activeTab} onChange={setActiveTab} />
       <main className="min-w-0 flex-1">
         {config ? (
-          <PanelShell title={title} onSave={save} onCancel={cancel} status={status} saving={saving}>
+          <PanelShell
+            title={title}
+            onSave={save}
+            onCancel={cancel}
+            status={status}
+            saving={saving}
+          >
             {content()}
           </PanelShell>
         ) : (
@@ -139,4 +162,3 @@ export function App() {
     </div>
   );
 }
-

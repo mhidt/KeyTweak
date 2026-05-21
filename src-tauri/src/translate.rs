@@ -29,6 +29,7 @@ const TOAST_LABEL: &str = "toast";
 struct RuntimeConfig {
     server_url: String,
     api_key: String,
+    auto_detect_language: bool,
     target_language: String,
     hotkey_translate: String,
     hotkey_reverse: String,
@@ -45,6 +46,7 @@ impl RuntimeConfig {
         Self {
             server_url: config.server_url.clone(),
             api_key: config.api_key.clone(),
+            auto_detect_language: config.auto_detect_language,
             target_language: config.target_language.clone(),
             hotkey_translate: config.hotkey_translate.clone(),
             hotkey_reverse: config.hotkey_reverse.clone(),
@@ -115,6 +117,9 @@ pub fn handle_keydown(vk_code: u32, modifiers: ModifierState) -> bool {
 
     if modifiers.ctrl && modifiers.shift && !modifiers.alt && !modifiers.win {
         if config.hotkey_reverse.eq_ignore_ascii_case("ctrl+shift+c") {
+            if config.auto_detect_language {
+                return false;
+            }
             trigger_reverse_translate(config);
             return true;
         }
@@ -198,12 +203,10 @@ fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
     let detected = detect_language(&text);
     let target = if reverse {
         reverse_target_language(&config.target_language)
+    } else if config.auto_detect_language {
+        auto_target_language(detected)
     } else {
-        // Auto: if source is Russian, translate to English; otherwise to Russian.
-        match detected {
-            "ru" => "en".to_string(),
-            _ => "ru".to_string(),
-        }
+        normalize_target_language(&config.target_language)
     };
 
     match translate_text(&text, &target, server_url, &config.api_key) {
@@ -501,6 +504,21 @@ fn restore_clipboard_text(text: Option<String>) {
 
 fn reverse_target_language(target_language: &str) -> String {
     if target_language.eq_ignore_ascii_case("ru") {
+        "en".to_string()
+    } else {
+        "ru".to_string()
+    }
+}
+
+fn auto_target_language(detected: &str) -> String {
+    match detected {
+        "ru" => "en".to_string(),
+        _ => "ru".to_string(),
+    }
+}
+
+fn normalize_target_language(target_language: &str) -> String {
+    if target_language.eq_ignore_ascii_case("en") {
         "en".to_string()
     } else {
         "ru".to_string()
