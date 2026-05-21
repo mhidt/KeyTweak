@@ -24,6 +24,9 @@ const V_KEY: u32 = 0x56;
 const DOUBLE_C_WINDOW: Duration = Duration::from_millis(500);
 const CLIPBOARD_SETTLE_DELAY: Duration = Duration::from_millis(120);
 const TOAST_LABEL: &str = "toast";
+const STARTUP_TOAST_HEIGHT: u32 = 104;
+const TRANSLATION_TOAST_HEIGHT: u32 = 220;
+const TOAST_WIDTH: u32 = 360;
 
 #[derive(Debug, Clone)]
 struct RuntimeConfig {
@@ -67,6 +70,12 @@ struct TranslationToastPayload {
     source_lang: String,
     target_lang: String,
     reverse: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AppToastPayload {
+    title: String,
+    message: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -356,6 +365,35 @@ pub fn hide_translation_toast() {
     }
 }
 
+pub fn show_startup_toast() {
+    let Some(app) = APP_HANDLE.get() else {
+        return;
+    };
+    let app = app.clone();
+
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(700));
+
+        let Some(window) = app.get_webview_window(TOAST_LABEL) else {
+            return;
+        };
+
+        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+            TOAST_WIDTH,
+            STARTUP_TOAST_HEIGHT,
+        )));
+        let _ = position_startup_toast_window(&window);
+        let _ = window.emit(
+            "show-app-toast",
+            AppToastPayload {
+                title: "KeyTweak запущен".to_string(),
+                message: "Горячие клавиши и Caps Lock работают в фоне.".to_string(),
+            },
+        );
+        let _ = window.show();
+    });
+}
+
 fn show_translation_toast(payload: TranslationToastPayload) {
     let Some(app) = APP_HANDLE.get() else {
         return;
@@ -364,6 +402,10 @@ fn show_translation_toast(payload: TranslationToastPayload) {
         return;
     };
 
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+        TOAST_WIDTH,
+        TRANSLATION_TOAST_HEIGHT,
+    )));
     let _ = position_toast_window(&window);
     let _ = window.emit("show-translation", payload);
     let _ = window.show();
@@ -433,6 +475,21 @@ fn position_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::Result<()
     if y + win_h > monitor_bottom - margin {
         y = monitor_bottom - margin - win_h;
     }
+
+    window.set_position(PhysicalPosition::new(x, y))
+}
+
+fn position_startup_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+    let monitor_pos = monitor.position();
+    let monitor_size = monitor.size();
+    let window_size = window.outer_size()?;
+    let margin = 18;
+
+    let x = monitor_pos.x + monitor_size.width as i32 - window_size.width as i32 - margin;
+    let y = monitor_pos.y + monitor_size.height as i32 - window_size.height as i32 - margin;
 
     window.set_position(PhysicalPosition::new(x, y))
 }

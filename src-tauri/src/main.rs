@@ -36,6 +36,7 @@ fn main() {
             state.install_keyboard_hook()?;
             state.start_libretranslate_server();
             tray::setup_tray(&app.handle())?;
+            translate::show_startup_toast();
 
             Ok(())
         })

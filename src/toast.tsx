@@ -8,32 +8,54 @@ import "./index.css";
 interface TranslationPayload {
   original: string;
   translated: string;
+  source_lang?: string;
   target_lang: string;
   reverse: boolean;
+}
+
+interface AppToastPayload {
+  title: string;
+  message: string;
 }
 
 const HIDE_DELAY_MS = 6000;
 
 function Toast() {
   const [payload, setPayload] = useState<TranslationPayload | null>(null);
+  const [appToast, setAppToast] = useState<AppToastPayload | null>(null);
 
   useEffect(() => {
-    const unlistenPromise = listen<TranslationPayload>("show-translation", (event) => {
-      setPayload(event.payload);
-    });
+    const unlistenTranslation = listen<TranslationPayload>(
+      "show-translation",
+      (event) => {
+        setAppToast(null);
+        setPayload(event.payload);
+      },
+    );
+    const unlistenAppToast = listen<AppToastPayload>(
+      "show-app-toast",
+      (event) => {
+        setPayload(null);
+        setAppToast(event.payload);
+      },
+    );
 
     return () => {
-      void unlistenPromise.then((fn) => fn());
+      void unlistenTranslation.then((fn) => fn());
+      void unlistenAppToast.then((fn) => fn());
     };
   }, []);
 
   useEffect(() => {
-    if (!payload) return;
-    const timer = window.setTimeout(() => {
-      void getCurrentWebviewWindow().hide();
-    }, HIDE_DELAY_MS);
+    if (!payload && !appToast) return;
+    const timer = window.setTimeout(
+      () => {
+        void getCurrentWebviewWindow().hide();
+      },
+      appToast ? 5000 : HIDE_DELAY_MS,
+    );
     return () => window.clearTimeout(timer);
-  }, [payload]);
+  }, [payload, appToast]);
 
   const close = () => {
     void getCurrentWebviewWindow().hide();
@@ -58,9 +80,50 @@ function Toast() {
   };
 
   if (!payload) {
+    if (appToast) {
+      return (
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-lg bg-background text-foreground shadow-xl">
+          <div className="flex-1 bg-gradient-to-r from-zinc-950 via-zinc-900 to-emerald-950 px-4 py-3 text-white">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/10 text-lg ring-1 ring-white/15">
+                  ⌨
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <span className="text-emerald-300">●</span>
+                    {appToast.title}
+                  </div>
+                  <div className="mt-1 text-xs text-zinc-300">
+                    {appToast.message}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={close}
+                className="rounded px-1.5 py-0.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="flex h-full w-full items-center justify-center bg-background text-xs text-muted-foreground">
-            Ожидание перевода...
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background text-xs text-muted-foreground">
+        <button
+          type="button"
+          onClick={close}
+          className="absolute right-3 top-2 rounded px-1.5 py-0.5 text-sm hover:bg-muted hover:text-foreground"
+          aria-label="Close"
+        >
+          ×
+        </button>
+        Ожидание события...
       </div>
     );
   }
@@ -88,12 +151,18 @@ function Toast() {
       </div>
 
       {!isError && payload.original && (
-        <div className="line-clamp-2 text-xs text-muted-foreground" title={payload.original}>
+        <div
+          className="line-clamp-2 text-xs text-muted-foreground"
+          title={payload.original}
+        >
           {payload.original}
         </div>
       )}
 
-      <div className="line-clamp-4 flex-1 overflow-hidden text-sm leading-snug" title={payload.translated}>
+      <div
+        className="line-clamp-4 flex-1 overflow-hidden text-sm leading-snug"
+        title={payload.translated}
+      >
         {payload.translated}
       </div>
 

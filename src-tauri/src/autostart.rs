@@ -1,109 +1,149 @@
-use std::{ffi::OsStr, io, os::windows::ffi::OsStrExt, path::Path};
-use thiserror::Error;
-use windows::{
-    core::PCWSTR,
-    Win32::{
-        Foundation::ERROR_FILE_NOT_FOUND,
-        System::Registry::{
-            RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW, HKEY,
-            HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SAM_FLAGS, REG_SZ,
-        },
-    },
+use std::{
+    io,
+    path::Path,
+    process::{Command, Stdio},
 };
+use thiserror::Error;
 
-const RUN_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const VALUE_NAME: &str = "KeyTweak";
+const TASK_NAME: &str = "KeyTweak";
 
 #[derive(Debug, Error)]
 pub enum AutoStartError {
-    #[error("failed to open Windows Run registry key: {0}")]
-    Open(io::Error),
-    #[error("failed to update Windows Run registry key: {0}")]
-    Write(io::Error),
-    #[error("failed to read Windows Run registry key: {0}")]
-    Read(io::Error),
+    #[error("failed to run Windows Task Scheduler command: {0}")]
+    Command(io::Error),
+    #[error("Windows Task Scheduler returned an error: {0}")]
+    TaskScheduler(String),
 }
 
 pub type Result<T> = std::result::Result<T, AutoStartError>;
 
 pub fn set_auto_start(enabled: bool, exe_path: &Path) -> Result<()> {
-    let key = open_run_key(KEY_SET_VALUE).map_err(AutoStartError::Open)?;
-    let value_name = wide(VALUE_NAME);
+    delete_legacy_run_entry();
 
-    let result = if enabled {
-        let quoted_path = format!("\"{}\"", exe_path.display());
-        let data = wide(&quoted_path);
-        let bytes =
-            unsafe { std::slice::from_raw_parts(data.as_ptr() as *const u8, data.len() * 2) };
-
-        let status =
-            unsafe { RegSetValueExW(key, PCWSTR(value_name.as_ptr()), 0, REG_SZ, Some(bytes)) };
-
-        status
-            .ok()
-            .map_err(|_| AutoStartError::Write(io::Error::last_os_error()))
+    if enabled {
+        create_elevated_logon_task(exe_path)
     } else {
-        let status = unsafe { RegDeleteValueW(key, PCWSTR(value_name.as_ptr())) };
-
-        if status == ERROR_FILE_NOT_FOUND {
-            Ok(())
-        } else {
-            status
-                .ok()
-                .map_err(|_| AutoStartError::Write(io::Error::last_os_error()))
-        }
-    };
-
-    unsafe {
-        let _ = RegCloseKey(key);
+        delete_logon_task()
     }
-
-    result
 }
 
 pub fn is_auto_start() -> Result<bool> {
-    let key = open_run_key(KEY_QUERY_VALUE).map_err(AutoStartError::Open)?;
-    let value_name = wide(VALUE_NAME);
-    let status =
-        unsafe { RegQueryValueExW(key, PCWSTR(value_name.as_ptr()), None, None, None, None) };
+    let output = schtasks()
+        .args(["/Query", "/TN", TASK_NAME])
+        .output()
+        .map_err(AutoStartError::Command)?;
 
-    unsafe {
-        let _ = RegCloseKey(key);
-    }
+    Ok(output.status.success())
+}
 
-    if status == ERROR_FILE_NOT_FOUND {
-        Ok(false)
+fn create_elevated_logon_task(exe_path: &Path) -> Result<()> {
+    let task_command = format!("\"{}\"", exe_path.display());
+    let args = [
+        "/Create",
+        "/TN",
+        TASK_NAME,
+        "/SC",
+        "ONLOGON",
+        "/TR",
+        &task_command,
+        "/RL",
+        "HIGHEST",
+        "/F",
+    ];
+    let output = schtasks()
+        .args(args)
+        .output()
+        .map_err(AutoStartError::Command)?;
+
+    if output.status.success() {
+        Ok(())
     } else {
-        status
-            .ok()
-            .map(|_| true)
-            .map_err(|_| AutoStartError::Read(io::Error::last_os_error()))
+        run_schtasks_elevated(&args)
     }
 }
 
-fn open_run_key(access: REG_SAM_FLAGS) -> io::Result<HKEY> {
-    let subkey = wide(RUN_KEY);
-    let mut key = HKEY::default();
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(subkey.as_ptr()),
-            0,
-            access,
-            &mut key,
-        )
-    };
+fn delete_logon_task() -> Result<()> {
+    if !is_auto_start()? {
+        return Ok(());
+    }
 
-    status
-        .ok()
-        .map(|_| key)
-        .map_err(|_| io::Error::last_os_error())
+    let output = schtasks()
+        .args(["/Delete", "/TN", TASK_NAME, "/F"])
+        .output()
+        .map_err(AutoStartError::Command)?;
+    let success = output.status.success();
+
+    if success {
+        Ok(())
+    } else {
+        run_schtasks_elevated(&["/Delete", "/TN", TASK_NAME, "/F"])
+    }
 }
 
-fn wide(value: impl AsRef<OsStr>) -> Vec<u16> {
-    value
-        .as_ref()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
+fn schtasks() -> Command {
+    let mut command = Command::new("schtasks.exe");
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+}
+
+fn delete_legacy_run_entry() {
+    let _ = Command::new("reg.exe")
+        .args([
+            "delete",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+            "/v",
+            TASK_NAME,
+            "/f",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn run_schtasks_elevated(args: &[&str]) -> Result<()> {
+    let argument_list = args
+        .iter()
+        .map(|arg| format!("'{}'", arg.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .join(",");
+    let command = format!(
+        "$p = Start-Process -FilePath schtasks.exe -ArgumentList @({argument_list}) -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
+    );
+    let output = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &command,
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(AutoStartError::Command)?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(AutoStartError::TaskScheduler(output_text(output)))
+    }
+}
+
+fn output_text(output: std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let text = format!("{stdout}{stderr}").trim().to_string();
+
+    if text.is_empty() {
+        "операция отменена или не подтверждена в UAC".to_string()
+    } else if text.contains('\u{FFFD}') {
+        "Task Scheduler вернул нечитаемую локализованную ошибку; обычно это отказ в доступе или отмененный UAC-запрос".to_string()
+    } else {
+        text
+    }
 }
