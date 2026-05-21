@@ -1,5 +1,5 @@
 use crate::{
-    autoreplace, capslock, config::Config, keyboard_hook::KeyboardHook,
+    autoreplace, capslock, config::Config, key_remap, keyboard_hook::KeyboardHook,
     libretranslate_server::LibreTranslateServer, translate,
 };
 use std::sync::{
@@ -19,6 +19,7 @@ impl AppState {
         let caps_paused = config.caps_lock.paused;
         capslock::configure(&config.caps_lock);
         autoreplace::configure(&config.auto_replace);
+        key_remap::configure(&config.key_remap);
         translate::configure(&config.translate);
 
         Self {
@@ -40,6 +41,7 @@ impl AppState {
     pub fn set_config(&self, config: Config) {
         capslock::configure(&config.caps_lock);
         autoreplace::configure(&config.auto_replace);
+        key_remap::configure(&config.key_remap);
         translate::configure(&config.translate);
         self.caps_paused
             .store(config.caps_lock.paused, Ordering::Relaxed);

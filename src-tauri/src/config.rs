@@ -16,6 +16,8 @@ pub struct Config {
     #[serde(default)]
     pub auto_replace: AutoReplaceConfig,
     #[serde(default)]
+    pub key_remap: KeyRemapConfig,
+    #[serde(default)]
     pub translate: TranslateConfig,
     #[serde(default)]
     pub general: GeneralConfig,
@@ -26,6 +28,7 @@ impl Default for Config {
         Self {
             caps_lock: CapsLockConfig::default(),
             auto_replace: AutoReplaceConfig::default(),
+            key_remap: KeyRemapConfig::default(),
             translate: TranslateConfig::default(),
             general: GeneralConfig::default(),
         }
@@ -130,6 +133,31 @@ pub struct ProgramException {
     pub mode: ExceptionMode,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyRemapConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mappings: Vec<KeyRemap>,
+}
+
+impl Default for KeyRemapConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            mappings: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KeyRemap {
+    pub from: String,
+    pub to: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExceptionMode {
@@ -176,12 +204,15 @@ impl Default for TranslateConfig {
 pub struct GeneralConfig {
     #[serde(default = "default_app_language")]
     pub app_language: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for GeneralConfig {
     fn default() -> Self {
         Self {
             app_language: default_app_language(),
+            theme: default_theme(),
         }
     }
 }
@@ -328,6 +359,10 @@ fn default_reverse_hotkey() -> String {
 
 fn default_app_language() -> String {
     "en".to_string()
+}
+
+fn default_theme() -> String {
+    "system".to_string()
 }
 
 #[cfg(test)]

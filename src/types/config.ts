@@ -1,10 +1,12 @@
 export type SwitchMode = "previous" | "default";
 export type RealCapsCombo = "shift_caps" | "alt_caps" | "ctrl_caps";
 export type ExceptionMode = "blacklist" | "whitelist";
+export type ThemeMode = "system" | "light" | "dark";
 
 export interface Config {
   caps_lock: CapsLockConfig;
   auto_replace: AutoReplaceConfig;
+  key_remap: KeyRemapConfig;
   translate: TranslateConfig;
   general: GeneralConfig;
 }
@@ -37,6 +39,17 @@ export interface ProgramException {
   mode: ExceptionMode;
 }
 
+export interface KeyRemapConfig {
+  enabled: boolean;
+  mappings: KeyRemap[];
+}
+
+export interface KeyRemap {
+  from: string;
+  to: string;
+  enabled: boolean;
+}
+
 export interface TranslateConfig {
   server_url: string;
   api_key: string;
@@ -48,4 +61,5 @@ export interface TranslateConfig {
 
 export interface GeneralConfig {
   app_language: string;
+  theme: ThemeMode;
 }

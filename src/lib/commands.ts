@@ -24,6 +24,10 @@ const defaultConfig: Config = {
     replacements: [],
     exceptions: [],
   },
+  key_remap: {
+    enabled: true,
+    mappings: [],
+  },
   translate: {
     server_url: "http://127.0.0.1:5000",
     api_key: "",
@@ -34,6 +38,7 @@ const defaultConfig: Config = {
   },
   general: {
     app_language: "en",
+    theme: "system",
   },
 };
 

@@ -11,6 +11,7 @@ import { AutoReplaceSettings } from "./components/AutoReplaceSettings";
 import { CapsLockSettings } from "./components/CapsLockSettings";
 import { ExceptionsSettings } from "./components/ExceptionsSettings";
 import { GeneralSettings } from "./components/GeneralSettings";
+import { KeyRemapSettings } from "./components/KeyRemapSettings";
 import { PanelShell } from "./components/PanelShell";
 import { Sidebar, type TabId } from "./components/Sidebar";
 import { TranslateSettings } from "./components/TranslateSettings";
@@ -60,12 +61,19 @@ export function App() {
     return load();
   }, [load]);
 
+  useEffect(() => {
+    const theme = config?.general.theme ?? "system";
+    document.documentElement.dataset.theme = theme;
+  }, [config?.general.theme]);
+
   const title = useMemo(() => {
     switch (activeTab) {
       case "caps":
         return "Caps Lock";
       case "autoreplace":
         return "Автозамена";
+      case "keyremap":
+        return "Клавиши";
       case "translate":
         return "Перевод";
       case "exceptions":
@@ -130,6 +138,8 @@ export function App() {
         return (
           <AutoReplaceSettings config={config} onChange={setConfigState} />
         );
+      case "keyremap":
+        return <KeyRemapSettings config={config} onChange={setConfigState} />;
       case "translate":
         return <TranslateSettings config={config} onChange={setConfigState} />;
       case "exceptions":

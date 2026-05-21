@@ -1,4 +1,4 @@
-use crate::{autoreplace, capslock, translate};
+use crate::{autoreplace, capslock, key_remap, translate};
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use windows::Win32::{
@@ -81,6 +81,13 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let is_keydown = wparam.0 as u32 == WM_KEYDOWN || wparam.0 as u32 == WM_SYSKEYDOWN;
         let is_keyup = wparam.0 as u32 == WM_KEYUP || wparam.0 as u32 == WM_SYSKEYUP;
         let is_injected = event.flags.contains(LLKHF_INJECTED);
+
+        if (is_keydown || is_keyup)
+            && !is_injected
+            && key_remap::handle_key_event(event.vkCode, is_keyup)
+        {
+            return LRESULT(1);
+        }
 
         if (is_keydown || is_keyup) && !is_injected {
             update_modifier_state(event.vkCode, is_keydown);

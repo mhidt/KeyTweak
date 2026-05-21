@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, CornerDownLeft, Keyboard, X } from "lucide-react";
+import { Copy, CornerDownLeft, Keyboard, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -110,19 +110,18 @@ export function ToastWindow() {
   return (
     <div className="h-screen bg-background text-foreground">
       {appToast ? (
-        <div className="flex h-full flex-col justify-between overflow-hidden rounded-lg bg-background shadow-xl">
-          <div className="flex-1 bg-gradient-to-r from-zinc-950 via-zinc-900 to-emerald-950 px-4 py-3 text-white">
+        <div className="flex h-full flex-col justify-between overflow-hidden rounded-md bg-zinc-950 text-white shadow-lg">
+          <div className="flex-1 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/10 ring-1 ring-white/15">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10">
                   <Keyboard size={20} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold">
-                    <CheckCircle2 size={15} className="text-emerald-300" />
                     {appToast.title}
                   </div>
-                  <div className="mt-1 text-xs text-zinc-300">
+                  <div className="mt-1 text-xs text-zinc-400">
                     {appToast.message}
                   </div>
                 </div>

@@ -1,9 +1,18 @@
-import { Ban, FileText, Globe, Key, Keyboard, Zap } from "lucide-react";
+import {
+  Ban,
+  FileText,
+  Globe,
+  Key,
+  Keyboard,
+  Replace,
+  Zap,
+} from "lucide-react";
 import { cn } from "../lib/utils";
 
 export type TabId =
   | "caps"
   | "autoreplace"
+  | "keyremap"
   | "translate"
   | "exceptions"
   | "api"
@@ -12,6 +21,7 @@ export type TabId =
 const items = [
   { id: "caps", label: "Caps Lock", icon: Keyboard, group: "Модули" },
   { id: "autoreplace", label: "Автозамена", icon: FileText, group: "Модули" },
+  { id: "keyremap", label: "Клавиши", icon: Replace, group: "Модули" },
   { id: "translate", label: "Перевод", icon: Globe, group: "Модули" },
   { id: "exceptions", label: "Исключения", icon: Ban, group: "Модули" },
   { id: "api", label: "API-ключи", icon: Key, group: "Система" },
@@ -55,7 +65,7 @@ export function Sidebar({ activeTab, onChange }: SidebarProps) {
                 "mx-2 flex h-9 w-[184px] items-center gap-2 rounded-md px-3 text-left text-sm transition-colors",
                 activeTab === item.id
                   ? "bg-primary text-primary-foreground"
-                  : "text-zinc-700 hover:bg-zinc-200/70",
+                  : "text-foreground hover:bg-background",
               )}
               onClick={() => onChange(item.id)}
               type="button"

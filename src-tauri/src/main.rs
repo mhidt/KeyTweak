@@ -6,6 +6,7 @@ mod autostart;
 mod capslock;
 mod commands;
 mod config;
+mod key_remap;
 mod keyboard_hook;
 mod libretranslate_server;
 mod state;

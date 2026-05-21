@@ -82,19 +82,18 @@ function Toast() {
   if (!payload) {
     if (appToast) {
       return (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-lg bg-background text-foreground shadow-xl">
-          <div className="flex-1 bg-gradient-to-r from-zinc-950 via-zinc-900 to-emerald-950 px-4 py-3 text-white">
+        <div className="flex h-full w-full flex-col overflow-hidden rounded-md bg-zinc-950 text-white shadow-lg">
+          <div className="flex-1 px-4 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/10 text-lg ring-1 ring-white/15">
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-base">
                   ⌨
                 </div>
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold">
-                    <span className="text-emerald-300">●</span>
                     {appToast.title}
                   </div>
-                  <div className="mt-1 text-xs text-zinc-300">
+                  <div className="mt-1 text-xs text-zinc-400">
                     {appToast.message}
                   </div>
                 </div>
