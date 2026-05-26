@@ -5,8 +5,9 @@ use std::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_ESCAPE, VK_LCONTROL, VK_LMENU, VK_LSHIFT,
-    VK_LWIN, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SPACE, VK_TAB,
+    VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME,
+    VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR,
+    VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -23,16 +24,11 @@ struct KeyMapping {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemapKey {
-    Alt,
-    Backspace,
-    CapsLock,
-    Ctrl,
-    Enter,
-    Esc,
-    Shift,
-    Space,
-    Tab,
-    Win,
+    AnyAlt,
+    AnyCtrl,
+    AnyShift,
+    AnyWin,
+    Vk(VIRTUAL_KEY),
 }
 
 static CONFIG: OnceLock<Mutex<RuntimeConfig>> = OnceLock::new();
@@ -76,55 +72,101 @@ pub fn handle_key_event(vk_code: u32, is_keyup: bool) -> bool {
         return false;
     };
 
-    send_key(mapping.to.output_vk(), is_keyup);
+    send_key(mapping.to.output_vk(vk_code), is_keyup);
     true
 }
 
 impl RemapKey {
     fn from_id(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "alt" => Some(Self::Alt),
-            "backspace" => Some(Self::Backspace),
-            "caps_lock" => Some(Self::CapsLock),
-            "ctrl" => Some(Self::Ctrl),
-            "enter" => Some(Self::Enter),
-            "esc" => Some(Self::Esc),
-            "shift" => Some(Self::Shift),
-            "space" => Some(Self::Space),
-            "tab" => Some(Self::Tab),
-            "win" => Some(Self::Win),
-            _ => None,
-        }
+        let vk = match value.trim().to_ascii_lowercase().as_str() {
+            "alt" => return Some(Self::AnyAlt),
+            "ctrl" | "control" => return Some(Self::AnyCtrl),
+            "shift" => return Some(Self::AnyShift),
+            "win" => return Some(Self::AnyWin),
+            "backspace" => VK_BACK,
+            "caps_lock" | "capslock" => VK_CAPITAL,
+            "delete" | "del" => VK_DELETE,
+            "down" | "arrowdown" => VK_DOWN,
+            "end" => VK_END,
+            "enter" | "return" => VIRTUAL_KEY(0x0D),
+            "esc" | "escape" => VK_ESCAPE,
+            "home" => VK_HOME,
+            "insert" | "ins" => VK_INSERT,
+            "left" | "arrowleft" => VK_LEFT,
+            "left_alt" => VK_LMENU,
+            "left_ctrl" | "left_control" => VK_LCONTROL,
+            "left_shift" => VK_LSHIFT,
+            "left_win" => VK_LWIN,
+            "page_down" | "pagedown" => VK_NEXT,
+            "page_up" | "pageup" => VK_PRIOR,
+            "right" | "arrowright" => VK_RIGHT,
+            "right_alt" => VK_RMENU,
+            "right_ctrl" | "right_control" => VK_RCONTROL,
+            "right_shift" => VK_RSHIFT,
+            "right_win" => VK_RWIN,
+            "space" => VK_SPACE,
+            "tab" => VK_TAB,
+            "up" | "arrowup" => VK_UP,
+            value if value.len() == 1 => {
+                let byte = value.as_bytes()[0];
+                if byte.is_ascii_alphabetic() {
+                    VIRTUAL_KEY(byte.to_ascii_uppercase() as u16)
+                } else if byte.is_ascii_digit() {
+                    VIRTUAL_KEY(byte as u16)
+                } else {
+                    return None;
+                }
+            }
+            value if value.starts_with('f') => {
+                let number = value[1..].parse::<u16>().ok()?;
+                if (1..=24).contains(&number) {
+                    VIRTUAL_KEY(0x6F + number)
+                } else {
+                    return None;
+                }
+            }
+            _ => return None,
+        };
+
+        Some(Self::Vk(vk))
     }
 
     fn matches_vk(self, vk_code: u32) -> bool {
         match self {
-            Self::Alt => matches_vk(vk_code, &[VK_MENU, VK_LMENU, VK_RMENU]),
-            Self::Backspace => matches_vk(vk_code, &[VK_BACK]),
-            Self::CapsLock => matches_vk(vk_code, &[VK_CAPITAL]),
-            Self::Ctrl => matches_vk(vk_code, &[VK_CONTROL, VK_LCONTROL, VK_RCONTROL]),
-            Self::Enter => vk_code == 0x0D,
-            Self::Esc => matches_vk(vk_code, &[VK_ESCAPE]),
-            Self::Shift => matches_vk(vk_code, &[VK_SHIFT, VK_LSHIFT, VK_RSHIFT]),
-            Self::Space => matches_vk(vk_code, &[VK_SPACE]),
-            Self::Tab => matches_vk(vk_code, &[VK_TAB]),
-            Self::Win => matches_vk(vk_code, &[VK_LWIN, VK_RWIN]),
+            Self::AnyAlt => matches_vk(vk_code, &[VK_MENU, VK_LMENU, VK_RMENU]),
+            Self::AnyCtrl => matches_vk(vk_code, &[VK_CONTROL, VK_LCONTROL, VK_RCONTROL]),
+            Self::AnyShift => matches_vk(vk_code, &[VK_SHIFT, VK_LSHIFT, VK_RSHIFT]),
+            Self::AnyWin => matches_vk(vk_code, &[VK_LWIN, VK_RWIN]),
+            Self::Vk(vk) => match vk {
+                VK_LCONTROL => vk_code == VK_LCONTROL.0 as u32,
+                VK_RCONTROL => vk_code == VK_RCONTROL.0 as u32,
+                VK_LMENU => vk_code == VK_LMENU.0 as u32,
+                VK_RMENU => vk_code == VK_RMENU.0 as u32,
+                VK_LSHIFT => vk_code == VK_LSHIFT.0 as u32,
+                VK_RSHIFT => vk_code == VK_RSHIFT.0 as u32,
+                VK_LWIN => vk_code == VK_LWIN.0 as u32,
+                VK_RWIN => vk_code == VK_RWIN.0 as u32,
+                _ => vk_code == vk.0 as u32,
+            },
         }
     }
 
-    fn output_vk(self) -> VIRTUAL_KEY {
+    fn output_vk(self, source_vk_code: u32) -> VIRTUAL_KEY {
         match self {
-            Self::Alt => VK_LMENU,
-            Self::Backspace => VK_BACK,
-            Self::CapsLock => VK_CAPITAL,
-            Self::Ctrl => VK_LCONTROL,
-            Self::Enter => VIRTUAL_KEY(0x0D),
-            Self::Esc => VK_ESCAPE,
-            Self::Shift => VK_LSHIFT,
-            Self::Space => VK_SPACE,
-            Self::Tab => VK_TAB,
-            Self::Win => VK_LWIN,
+            Self::AnyAlt => side_matching_vk(source_vk_code, VK_LMENU, VK_RMENU),
+            Self::AnyCtrl => side_matching_vk(source_vk_code, VK_LCONTROL, VK_RCONTROL),
+            Self::AnyShift => side_matching_vk(source_vk_code, VK_LSHIFT, VK_RSHIFT),
+            Self::AnyWin => side_matching_vk(source_vk_code, VK_LWIN, VK_RWIN),
+            Self::Vk(vk) => vk,
         }
+    }
+}
+
+fn side_matching_vk(source_vk_code: u32, left: VIRTUAL_KEY, right: VIRTUAL_KEY) -> VIRTUAL_KEY {
+    if source_vk_code == right.0 as u32 {
+        right
+    } else {
+        left
     }
 }
 
@@ -163,7 +205,22 @@ fn send_key(vk: VIRTUAL_KEY, is_keyup: bool) {
 fn is_extended_key(vk: VIRTUAL_KEY) -> bool {
     matches!(
         vk,
-        VK_LWIN | VK_RWIN | VK_LMENU | VK_RMENU | VK_LCONTROL | VK_RCONTROL
+        VK_LWIN
+            | VK_RWIN
+            | VK_LMENU
+            | VK_RMENU
+            | VK_LCONTROL
+            | VK_RCONTROL
+            | VK_INSERT
+            | VK_DELETE
+            | VK_HOME
+            | VK_END
+            | VK_PRIOR
+            | VK_NEXT
+            | VK_LEFT
+            | VK_RIGHT
+            | VK_UP
+            | VK_DOWN
     )
 }
 

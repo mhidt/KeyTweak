@@ -1,9 +1,10 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Keyboard, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type { Config, KeyRemap } from "../types/config";
+import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Label } from "./ui/label";
-import { Select } from "./ui/select";
 import { Table, Td, Th } from "./ui/table";
 
 interface Props {
@@ -11,20 +12,115 @@ interface Props {
   onChange: (config: Config) => void;
 }
 
-const KEY_OPTIONS = [
-  { value: "alt", label: "Alt" },
-  { value: "win", label: "Win" },
-  { value: "ctrl", label: "Ctrl" },
-  { value: "shift", label: "Shift" },
-  { value: "caps_lock", label: "Caps Lock" },
-  { value: "tab", label: "Tab" },
-  { value: "esc", label: "Esc" },
-  { value: "enter", label: "Enter" },
-  { value: "backspace", label: "Backspace" },
-  { value: "space", label: "Space" },
-];
+type CaptureTarget = {
+  index: number;
+  field: "from" | "to";
+};
+
+const KEY_LABELS: Record<string, string> = {
+  alt: "Alt",
+  backspace: "Backspace",
+  caps_lock: "Caps Lock",
+  ctrl: "Ctrl",
+  delete: "Delete",
+  down: "Down",
+  end: "End",
+  enter: "Enter",
+  esc: "Esc",
+  home: "Home",
+  insert: "Insert",
+  left: "Left Arrow",
+  left_alt: "Left Alt",
+  left_ctrl: "Left Ctrl",
+  left_shift: "Left Shift",
+  left_win: "Left Win",
+  page_down: "Page Down",
+  page_up: "Page Up",
+  right: "Right Arrow",
+  right_alt: "Right Alt",
+  right_ctrl: "Right Ctrl",
+  right_shift: "Right Shift",
+  right_win: "Right Win",
+  shift: "Shift",
+  space: "Space",
+  tab: "Tab",
+  up: "Up Arrow",
+  win: "Win",
+};
+
+function normalizeKeyInput(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function keyLabel(value: string) {
+  const normalized = normalizeKeyInput(value);
+  return KEY_LABELS[normalized] ?? normalized.toUpperCase();
+}
+
+function capturedKeyId(event: React.KeyboardEvent) {
+  switch (event.code) {
+    case "AltLeft":
+      return "left_alt";
+    case "AltRight":
+      return "right_alt";
+    case "ControlLeft":
+      return "left_ctrl";
+    case "ControlRight":
+      return "right_ctrl";
+    case "ShiftLeft":
+      return "left_shift";
+    case "ShiftRight":
+      return "right_shift";
+    case "MetaLeft":
+      return "left_win";
+    case "MetaRight":
+      return "right_win";
+    default:
+      break;
+  }
+
+  if (/^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(event.code)) return event.code.slice(5);
+  if (/^Numpad[0-9]$/.test(event.code)) return `num${event.code.slice(6)}`;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(event.code)) {
+    return event.code.toLowerCase();
+  }
+
+  switch (event.key) {
+    case " ":
+    case "Spacebar":
+      return "space";
+    case "Escape":
+      return "esc";
+    case "ArrowUp":
+      return "up";
+    case "ArrowDown":
+      return "down";
+    case "ArrowLeft":
+      return "left";
+    case "ArrowRight":
+      return "right";
+    case "PageUp":
+      return "page_up";
+    case "PageDown":
+      return "page_down";
+    case "CapsLock":
+      return "caps_lock";
+    case "Backspace":
+    case "Delete":
+    case "End":
+    case "Enter":
+    case "Home":
+    case "Insert":
+    case "Tab":
+      return event.key.toLowerCase();
+    default:
+      return event.key.length === 1 ? event.key.toLowerCase() : "";
+  }
+}
 
 export function KeyRemapSettings({ config, onChange }: Props) {
+  const [capture, setCapture] = useState<CaptureTarget | null>(null);
   const remap = config.key_remap;
   const updateRemap = (patch: Partial<Config["key_remap"]>) =>
     onChange({ ...config, key_remap: { ...remap, ...patch } });
@@ -39,7 +135,10 @@ export function KeyRemapSettings({ config, onChange }: Props) {
 
   const addMapping = () => {
     updateRemap({
-      mappings: [...remap.mappings, { from: "alt", to: "win", enabled: true }],
+      mappings: [
+        ...remap.mappings,
+        { from: "left_alt", to: "win", enabled: false },
+      ],
     });
   };
 
@@ -47,6 +146,73 @@ export function KeyRemapSettings({ config, onChange }: Props) {
     updateRemap({
       mappings: remap.mappings.filter((_, itemIndex) => itemIndex !== index),
     });
+  };
+
+  const handleCaptureKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+    field: "from" | "to",
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === "Escape") {
+      setCapture(null);
+      return;
+    }
+
+    const key = capturedKeyId(event);
+    if (!key) return;
+
+    updateMapping(index, { [field]: key });
+    setCapture(null);
+  };
+
+  const renderKeyInput = (
+    mapping: KeyRemap,
+    index: number,
+    field: "from" | "to",
+    ariaLabel: string,
+  ) => {
+    const active = capture?.index === index && capture.field === field;
+    const value = mapping[field];
+
+    return (
+      <div
+        className={cn(
+          "relative min-w-[180px]",
+          active && "rounded-md ring-2 ring-primary/30",
+        )}
+      >
+        <input
+          value={value}
+          onChange={(event) =>
+            updateMapping(index, {
+              [field]: normalizeKeyInput(event.target.value),
+            })
+          }
+          onFocus={() => setCapture(null)}
+          placeholder="left_alt"
+          title={value ? keyLabel(value) : undefined}
+          className="h-9 w-full rounded-md border border-input bg-background py-2 pl-3 pr-10 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+          aria-label={ariaLabel}
+        />
+        <button
+          type="button"
+          title={active ? "Нажмите клавишу" : "Считать клавишу с клавиатуры"}
+          onFocus={() => setCapture({ index, field })}
+          onBlur={() => setCapture(null)}
+          onKeyDown={(event) => handleCaptureKeyDown(event, index, field)}
+          className={cn(
+            "absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded text-muted-foreground",
+            active ? "bg-muted text-foreground" : "hover:bg-muted hover:text-foreground",
+          )}
+          aria-label="Считать клавишу с клавиатуры"
+        >
+          <Keyboard size={14} />
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -77,7 +243,7 @@ export function KeyRemapSettings({ config, onChange }: Props) {
             </thead>
             <tbody>
               {remap.mappings.map((mapping, index) => (
-                <tr key={`${mapping.from}-${mapping.to}-${index}`}>
+                <tr key={index}>
                   <Td>
                     <input
                       type="checkbox"
@@ -90,34 +256,10 @@ export function KeyRemapSettings({ config, onChange }: Props) {
                     />
                   </Td>
                   <Td>
-                    <Select
-                      value={mapping.from}
-                      onChange={(event) =>
-                        updateMapping(index, { from: event.target.value })
-                      }
-                      className="w-full min-w-[140px]"
-                    >
-                      {KEY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
+                    {renderKeyInput(mapping, index, "from", "Клавиша")}
                   </Td>
                   <Td>
-                    <Select
-                      value={mapping.to}
-                      onChange={(event) =>
-                        updateMapping(index, { to: event.target.value })
-                      }
-                      className="w-full min-w-[140px]"
-                    >
-                      {KEY_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </Select>
+                    {renderKeyInput(mapping, index, "to", "Работает как")}
                   </Td>
                   <Td>
                     <Button

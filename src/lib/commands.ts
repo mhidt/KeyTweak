@@ -26,7 +26,7 @@ const defaultConfig: Config = {
   },
   key_remap: {
     enabled: true,
-    mappings: [],
+    mappings: [{ from: "left_alt", to: "win", enabled: false }],
   },
   translate: {
     server_url: "http://127.0.0.1:5000",

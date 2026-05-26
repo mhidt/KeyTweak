@@ -145,7 +145,11 @@ impl Default for KeyRemapConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            mappings: Vec::new(),
+            mappings: vec![KeyRemap {
+                from: "left_alt".to_string(),
+                to: "win".to_string(),
+                enabled: false,
+            }],
         }
     }
 }
@@ -268,10 +272,12 @@ pub fn load_config_from_path(path: impl AsRef<Path>) -> Result<Config> {
         source,
     })?;
 
-    serde_json::from_str(&raw).map_err(|source| ConfigError::ParseFile {
+    let mut config: Config = serde_json::from_str(&raw).map_err(|source| ConfigError::ParseFile {
         path: path.to_path_buf(),
         source,
-    })
+    })?;
+    migrate_config(&mut config);
+    Ok(config)
 }
 
 pub fn save_config_to_path(path: impl AsRef<Path>, config: &Config) -> Result<()> {
@@ -363,6 +369,16 @@ fn default_app_language() -> String {
 
 fn default_theme() -> String {
     "system".to_string()
+}
+
+fn migrate_config(config: &mut Config) {
+    for mapping in &mut config.key_remap.mappings {
+        if mapping.from.eq_ignore_ascii_case("alt+v") && mapping.to.eq_ignore_ascii_case("win+v") {
+            mapping.from = "left_alt".to_string();
+            mapping.to = "win".to_string();
+            mapping.enabled = false;
+        }
+    }
 }
 
 #[cfg(test)]
