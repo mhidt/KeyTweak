@@ -91,7 +91,9 @@ export function App() {
     setStatus("");
     try {
       await setConfig(config);
-      await setAutoStart(config.caps_lock.auto_start);
+      if (savedConfig?.caps_lock.auto_start !== config.caps_lock.auto_start) {
+        await setAutoStart(config.caps_lock.auto_start);
+      }
       setSavedConfig(config);
       setStatus("Сохранено");
     } catch (error) {

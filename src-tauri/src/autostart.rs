@@ -1,149 +1,204 @@
-use std::{
-    io,
-    path::Path,
-    process::{Command, Stdio},
-};
+use std::{io, path::Path};
+
 use thiserror::Error;
 
-const TASK_NAME: &str = "KeyTweak";
+const APP_NAME: &str = "KeyTweak";
+const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[derive(Debug, Error)]
 pub enum AutoStartError {
-    #[error("failed to run Windows Task Scheduler command: {0}")]
-    Command(io::Error),
-    #[error("Windows Task Scheduler returned an error: {0}")]
-    TaskScheduler(String),
+    #[error("failed to update Windows startup registry entry: {0}")]
+    Registry(io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, AutoStartError>;
 
 pub fn set_auto_start(enabled: bool, exe_path: &Path) -> Result<()> {
-    delete_legacy_run_entry();
-
     if enabled {
-        create_elevated_logon_task(exe_path)
+        set_run_entry(exe_path)
     } else {
-        delete_logon_task()
+        delete_run_entry()
     }
 }
 
 pub fn is_auto_start() -> Result<bool> {
-    let output = schtasks()
-        .args(["/Query", "/TN", TASK_NAME])
-        .output()
-        .map_err(AutoStartError::Command)?;
-
-    Ok(output.status.success())
+    run_entry_exists()
 }
 
-fn create_elevated_logon_task(exe_path: &Path) -> Result<()> {
-    let task_command = format!("\"{}\"", exe_path.display());
-    let args = [
-        "/Create",
-        "/TN",
-        TASK_NAME,
-        "/SC",
-        "ONLOGON",
-        "/TR",
-        &task_command,
-        "/RL",
-        "HIGHEST",
-        "/F",
-    ];
-    let output = schtasks()
-        .args(args)
-        .output()
-        .map_err(AutoStartError::Command)?;
+#[cfg(windows)]
+fn set_run_entry(exe_path: &Path) -> Result<()> {
+    use std::slice;
+    use windows::{
+        core::PCWSTR,
+        Win32::System::Registry::{
+            RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
+            KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
+        },
+    };
 
-    if output.status.success() {
+    let key_path = wide_null(RUN_KEY_PATH);
+    let value_name = wide_null(APP_NAME);
+    let command = wide_null(&format!("\"{}\"", exe_path.display()));
+    let bytes = unsafe {
+        slice::from_raw_parts(command.as_ptr().cast::<u8>(), command.len() * size_of::<u16>())
+    };
+    let mut key = HKEY::default();
+
+    let status = unsafe {
+        RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(key_path.as_ptr()),
+            0,
+            PCWSTR::null(),
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            None,
+            &mut key,
+            None,
+        )
+    };
+    if status.0 != 0 {
+        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )));
+    }
+
+    let status = unsafe {
+        RegSetValueExW(key, PCWSTR(value_name.as_ptr()), 0, REG_SZ, Some(bytes))
+    };
+    unsafe {
+        let _ = RegCloseKey(key);
+    }
+
+    if status.0 == 0 {
         Ok(())
     } else {
-        run_schtasks_elevated(&args)
+        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )))
     }
 }
 
-fn delete_logon_task() -> Result<()> {
-    if !is_auto_start()? {
+#[cfg(windows)]
+fn delete_run_entry() -> Result<()> {
+    use windows::{
+        core::PCWSTR,
+        Win32::System::Registry::{
+            RegCloseKey, RegDeleteValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
+        },
+    };
+
+    let key_path = wide_null(RUN_KEY_PATH);
+    let value_name = wide_null(APP_NAME);
+    let mut key = HKEY::default();
+
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(key_path.as_ptr()),
+            0,
+            KEY_SET_VALUE,
+            &mut key,
+        )
+    };
+    if is_not_found(status.0) {
         return Ok(());
     }
+    if status.0 != 0 {
+        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )));
+    }
 
-    let output = schtasks()
-        .args(["/Delete", "/TN", TASK_NAME, "/F"])
-        .output()
-        .map_err(AutoStartError::Command)?;
-    let success = output.status.success();
+    let status = unsafe { RegDeleteValueW(key, PCWSTR(value_name.as_ptr())) };
+    unsafe {
+        let _ = RegCloseKey(key);
+    }
 
-    if success {
+    if status.0 == 0 || is_not_found(status.0) {
         Ok(())
     } else {
-        run_schtasks_elevated(&["/Delete", "/TN", TASK_NAME, "/F"])
+        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )))
     }
 }
 
-fn schtasks() -> Command {
-    let mut command = Command::new("schtasks.exe");
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    command
-}
+#[cfg(windows)]
+fn run_entry_exists() -> Result<bool> {
+    use windows::{
+        core::PCWSTR,
+        Win32::System::Registry::{
+            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE,
+        },
+    };
 
-fn delete_legacy_run_entry() {
-    let _ = Command::new("reg.exe")
-        .args([
-            "delete",
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-            "/v",
-            TASK_NAME,
-            "/f",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
+    let key_path = wide_null(RUN_KEY_PATH);
+    let value_name = wide_null(APP_NAME);
+    let mut key = HKEY::default();
 
-fn run_schtasks_elevated(args: &[&str]) -> Result<()> {
-    let argument_list = args
-        .iter()
-        .map(|arg| format!("'{}'", arg.replace('\'', "''")))
-        .collect::<Vec<_>>()
-        .join(",");
-    let command = format!(
-        "$p = Start-Process -FilePath schtasks.exe -ArgumentList @({argument_list}) -Verb RunAs -Wait -PassThru; exit $p.ExitCode"
-    );
-    let output = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &command,
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(AutoStartError::Command)?;
+    let status = unsafe {
+        RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(key_path.as_ptr()),
+            0,
+            KEY_QUERY_VALUE,
+            &mut key,
+        )
+    };
+    if is_not_found(status.0) {
+        return Ok(false);
+    }
+    if status.0 != 0 {
+        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )));
+    }
 
-    if output.status.success() {
-        Ok(())
+    let status =
+        unsafe { RegQueryValueExW(key, PCWSTR(value_name.as_ptr()), None, None, None, None) };
+    unsafe {
+        let _ = RegCloseKey(key);
+    }
+
+    if status.0 == 0 {
+        Ok(true)
+    } else if is_not_found(status.0) {
+        Ok(false)
     } else {
-        Err(AutoStartError::TaskScheduler(output_text(output)))
+        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
+            status.0 as i32,
+        )))
     }
 }
 
-fn output_text(output: std::process::Output) -> String {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let text = format!("{stdout}{stderr}").trim().to_string();
+#[cfg(not(windows))]
+fn set_run_entry(_exe_path: &Path) -> Result<()> {
+    Ok(())
+}
 
-    if text.is_empty() {
-        "операция отменена или не подтверждена в UAC".to_string()
-    } else if text.contains('\u{FFFD}') {
-        "Task Scheduler вернул нечитаемую локализованную ошибку; обычно это отказ в доступе или отмененный UAC-запрос".to_string()
-    } else {
-        text
-    }
+#[cfg(not(windows))]
+fn delete_run_entry() -> Result<()> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn run_entry_exists() -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(windows)]
+fn wide_null(value: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+
+    value
+        .as_ref()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+#[cfg(windows)]
+fn is_not_found(code: u32) -> bool {
+    code == 2 || code == 3
 }
