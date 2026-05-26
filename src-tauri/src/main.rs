@@ -35,6 +35,11 @@ fn main() {
             translate::set_app_handle(app.handle().clone());
             let state = app.state::<AppState>();
             state.install_keyboard_hook()?;
+            if state.config().caps_lock.auto_start {
+                if let Err(error) = autostart::set_auto_start(true) {
+                    log::error!("failed to repair Windows startup entry: {error}");
+                }
+            }
             state.start_libretranslate_server();
             tray::setup_tray(&app.handle())?;
             translate::show_startup_toast();

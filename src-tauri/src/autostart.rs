@@ -1,4 +1,7 @@
-use std::{io, path::Path};
+use std::{
+    env, io,
+    path::{Path, PathBuf},
+};
 
 use thiserror::Error;
 
@@ -7,18 +10,43 @@ const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
 #[derive(Debug, Error)]
 pub enum AutoStartError {
+    #[error("failed to locate executable for Windows startup: {0}")]
+    ExecutablePath(io::Error),
     #[error("failed to update Windows startup registry entry: {0}")]
     Registry(io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, AutoStartError>;
 
-pub fn set_auto_start(enabled: bool, exe_path: &Path) -> Result<()> {
+pub fn set_auto_start(enabled: bool) -> Result<()> {
     if enabled {
-        set_run_entry(exe_path)
+        let exe_path = startup_exe_path()?;
+        set_run_entry(&exe_path)
     } else {
         delete_run_entry()
     }
+}
+
+fn startup_exe_path() -> Result<PathBuf> {
+    let exe_path = env::current_exe().map_err(AutoStartError::ExecutablePath)?;
+
+    #[cfg(debug_assertions)]
+    {
+        if let Some(release_path) = release_exe_path(&exe_path) {
+            if release_path.exists() {
+                return Ok(release_path);
+            }
+        }
+    }
+
+    Ok(exe_path)
+}
+
+#[cfg(debug_assertions)]
+fn release_exe_path(exe_path: &Path) -> Option<PathBuf> {
+    let file_name = exe_path.file_name()?;
+    let target_dir = exe_path.parent()?.parent()?;
+    Some(target_dir.join("release").join(file_name))
 }
 
 pub fn is_auto_start() -> Result<bool> {

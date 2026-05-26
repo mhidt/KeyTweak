@@ -32,8 +32,7 @@ pub fn is_caps_paused(state: State<'_, AppState>) -> bool {
 
 #[tauri::command]
 pub fn set_auto_start(enabled: bool) -> CommandResult<()> {
-    let exe_path = std::env::current_exe().map_err(|error| error.to_string())?;
-    autostart::set_auto_start(enabled, &exe_path).map_err(|error| error.to_string())
+    autostart::set_auto_start(enabled).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
