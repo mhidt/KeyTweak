@@ -11,6 +11,7 @@ mod keyboard_hook;
 mod keys;
 mod libretranslate_server;
 mod state;
+mod toast;
 mod translate;
 mod tray;
 mod window;
@@ -33,7 +34,7 @@ fn main() {
             let _ = window::show_settings(app);
         }))
         .setup(|app| {
-            translate::set_app_handle(app.handle().clone());
+            toast::set_app_handle(app.handle().clone());
             let state = app.state::<AppState>();
             state.install_keyboard_hook()?;
             if state.config().caps_lock.auto_start {
@@ -43,7 +44,7 @@ fn main() {
             }
             state.start_libretranslate_server();
             tray::setup_tray(&app.handle())?;
-            translate::show_startup_toast();
+            toast::show_startup_toast();
 
             Ok(())
         })

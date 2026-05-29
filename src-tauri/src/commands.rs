@@ -1,4 +1,4 @@
-use crate::{autostart, config, config::Config, state::AppState, translate, tray};
+use crate::{autostart, config, config::Config, state::AppState, toast, translate, tray};
 use tauri::{AppHandle, State};
 
 type CommandResult<T> = Result<T, String>;
@@ -61,5 +61,5 @@ pub fn copy_to_clipboard(text: String) -> CommandResult<()> {
 
 #[tauri::command]
 pub fn hide_translation_toast() {
-    translate::hide_translation_toast();
+    toast::hide_translation_toast();
 }

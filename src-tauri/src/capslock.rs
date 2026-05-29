@@ -1,6 +1,7 @@
 use crate::{
     config::{CapsLockConfig, RealCapsCombo, SwitchMode},
     keyboard_hook::ModifierState,
+    keys,
 };
 use std::{
     ffi::c_void,
@@ -9,10 +10,10 @@ use std::{
 use thiserror::Error;
 use windows::Win32::{
     UI::Input::KeyboardAndMouse::{
-        ActivateKeyboardLayout, GetKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER,
+        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER,
     },
     UI::WindowsAndMessaging::{
-        GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
+        GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
     },
 };
 
@@ -141,14 +142,7 @@ fn switch_next_layout() -> Result<(), CapsLockError> {
 }
 
 fn current_layout_id() -> usize {
-    let foreground = unsafe { GetForegroundWindow() };
-    let thread_id = if foreground.is_invalid() {
-        0
-    } else {
-        unsafe { GetWindowThreadProcessId(foreground, None) }
-    };
-
-    unsafe { GetKeyboardLayout(thread_id).0 as usize }
+    keys::foreground_layout().0 as usize
 }
 
 fn next_layout_id(current: usize) -> Result<usize, CapsLockError> {

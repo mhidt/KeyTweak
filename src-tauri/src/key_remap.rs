@@ -1,13 +1,10 @@
-use crate::{config::KeyRemapConfig, keys};
+use crate::{config::KeyRemapConfig, keys::{self, press}};
 use std::{
-    mem::size_of,
     sync::{Mutex, OnceLock},
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_INSERT, VK_LCONTROL,
-    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT,
-    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP,
+    VIRTUAL_KEY, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
+    VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -148,53 +145,8 @@ fn matches_vk(vk_code: u32, keys: &[VIRTUAL_KEY]) -> bool {
 }
 
 fn send_key(vk: VIRTUAL_KEY, is_keyup: bool) {
-    let mut flags = if is_keyup {
-        KEYEVENTF_KEYUP
-    } else {
-        Default::default()
-    };
-    if is_extended_key(vk) {
-        flags |= KEYEVENTF_EXTENDEDKEY;
-    }
-
-    let input = INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: flags,
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    };
-
-    unsafe {
-        let _ = SendInput(&[input], size_of::<INPUT>() as i32);
-    }
-}
-
-fn is_extended_key(vk: VIRTUAL_KEY) -> bool {
-    matches!(
-        vk,
-        VK_LWIN
-            | VK_RWIN
-            | VK_LMENU
-            | VK_RMENU
-            | VK_LCONTROL
-            | VK_RCONTROL
-            | VK_INSERT
-            | VK_DELETE
-            | VK_HOME
-            | VK_END
-            | VK_PRIOR
-            | VK_NEXT
-            | VK_LEFT
-            | VK_RIGHT
-            | VK_UP
-            | VK_DOWN
-    )
+    let input = press(vk, is_keyup);
+    keys::send_inputs(&[input]);
 }
 
 fn config_store() -> &'static Mutex<RuntimeConfig> {

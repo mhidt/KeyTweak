@@ -16,7 +16,7 @@ export function capturedKeyId(event: React.KeyboardEvent) {
 
   if (code.startsWith("key")) return code.slice(3);
   if (code.startsWith("digit")) return code.slice(5);
-  if (code.startsWith("numpad")) return code;
+  if (code.startsWith("num")) return code;
   if (code.startsWith("f") && code.length <= 3) return code;
 
   // For everything else, use event.key directly (browser-native names)

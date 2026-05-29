@@ -1,11 +1,10 @@
 use crate::{
     config::{AutoReplaceConfig, ExceptionMode, ProgramException, Replacement},
     keyboard_hook::ModifierState,
-    keys,
+    keys::{self, press, unicode},
 };
 use std::{
-    ffi::OsString,
-    mem::size_of,
+    ffi::{OsStr, OsString},
     os::windows::ffi::OsStringExt,
     path::Path,
     sync::{Mutex, OnceLock},
@@ -20,10 +19,8 @@ use windows::{
         },
         UI::{
             Input::KeyboardAndMouse::{
-                GetKeyboardLayout, GetKeyboardState, SendInput, ToUnicodeEx, INPUT, INPUT_0,
-                INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, VIRTUAL_KEY,
-                VK_BACK, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RETURN,
-                VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
+                GetKeyboardState, ToUnicodeEx, VK_BACK, VK_DELETE, VK_DOWN, VK_END,
+                VK_ESCAPE, VK_HOME, VK_LEFT, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
             },
             WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId},
         },
@@ -220,13 +217,7 @@ fn key_to_char(vk_code: u32, scan_code: u32) -> Option<char> {
     let mut keyboard_state = [0u8; 256];
     unsafe { GetKeyboardState(&mut keyboard_state) }.ok()?;
 
-    let foreground = unsafe { GetForegroundWindow() };
-    let thread_id = if foreground.is_invalid() {
-        0
-    } else {
-        unsafe { GetWindowThreadProcessId(foreground, None) }
-    };
-    let layout = unsafe { GetKeyboardLayout(thread_id) };
+    let layout = keys::foreground_layout();
     let mut chars = [0u16; 8];
     let count = unsafe { ToUnicodeEx(vk_code, scan_code, &keyboard_state, &mut chars, 0, layout) };
 
@@ -244,50 +235,22 @@ fn replace_word(word: &str, replacement: &str) -> bool {
     let mut inputs = Vec::new();
 
     for _ in word.chars() {
-        inputs.push(keys::vk(VK_BACK, false));
-        inputs.push(keys::vk(VK_BACK, true));
+        inputs.push(press(VK_BACK, false));
+        inputs.push(press(VK_BACK, true));
     }
 
     for unit in replacement.encode_utf16() {
-        inputs.push(unicode_input(unit, false));
-        inputs.push(unicode_input(unit, true));
+        inputs.push(unicode(unit, false));
+        inputs.push(unicode(unit, true));
     }
 
-    let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
-    sent == inputs.len() as u32
-}
-
-fn unicode_input(unit: u16, key_up: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: VIRTUAL_KEY(0),
-                wScan: unit,
-                dwFlags: if key_up {
-                    KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
-                } else {
-                    KEYEVENTF_UNICODE
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
+    keys::send_inputs(&inputs) == inputs.len() as u32
 }
 
 fn should_clear_buffer(vk_code: u32) -> bool {
-    matches!(
-        vk_code,
-        code if code == VK_ESCAPE.0 as u32
-            || code == VK_DELETE.0 as u32
-            || code == VK_LEFT.0 as u32
-            || code == VK_RIGHT.0 as u32
-            || code == VK_UP.0 as u32
-            || code == VK_DOWN.0 as u32
-            || code == VK_HOME.0 as u32
-            || code == VK_END.0 as u32
-    )
+    [VK_ESCAPE, VK_DELETE, VK_LEFT, VK_RIGHT, VK_UP, VK_DOWN, VK_HOME, VK_END]
+        .iter()
+        .any(|vk| vk.0 as u32 == vk_code)
 }
 
 fn is_excluded(config: &RuntimeConfig) -> bool {
@@ -295,16 +258,17 @@ fn is_excluded(config: &RuntimeConfig) -> bool {
         return false;
     };
 
-    let has_whitelist = config
-        .exceptions
-        .iter()
-        .any(|entry| entry.mode == ExceptionMode::Whitelist);
-    let in_blacklist = config.exceptions.iter().any(|entry| {
-        entry.mode == ExceptionMode::Blacklist && same_process_name(&entry.program, &process_name)
-    });
-    let in_whitelist = config.exceptions.iter().any(|entry| {
-        entry.mode == ExceptionMode::Whitelist && same_process_name(&entry.program, &process_name)
-    });
+    let (in_blacklist, in_whitelist, has_whitelist) = config.exceptions.iter().fold(
+        (false, false, false),
+        |(in_bl, in_wl, has_wl), entry| {
+            let matches = same_process_name(&entry.program, &process_name);
+            (
+                in_bl || (entry.mode == ExceptionMode::Blacklist && matches),
+                in_wl || (entry.mode == ExceptionMode::Whitelist && matches),
+                has_wl || entry.mode == ExceptionMode::Whitelist,
+            )
+        },
+    );
 
     in_blacklist || (has_whitelist && !in_whitelist)
 }
@@ -340,16 +304,15 @@ fn foreground_process_name() -> Option<String> {
     result.ok()?;
 
     let path = OsString::from_wide(&buffer[..size as usize]);
-    Path::new(&path)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
+    filename_lower(&path)
+}
+
+fn filename_lower(path: &OsStr) -> Option<String> {
+    Path::new(path).file_name().map(|n| n.to_string_lossy().to_lowercase())
 }
 
 fn same_process_name(configured: &str, actual: &str) -> bool {
-    let configured = Path::new(configured)
-        .file_name()
-        .map(|name| name.to_string_lossy().to_lowercase())
-        .unwrap_or_else(|| configured.to_lowercase());
+    let configured = filename_lower(OsStr::new(configured)).unwrap_or_else(|| configured.to_lowercase());
 
     configured == actual
 }

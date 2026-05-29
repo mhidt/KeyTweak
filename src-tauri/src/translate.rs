@@ -1,20 +1,16 @@
-use crate::{config::TranslateConfig, keyboard_hook::ModifierState, keys};
+use crate::{config::TranslateConfig, keyboard_hook::ModifierState, keys::{self, press, press_code}, toast::{TranslationToastPayload, hide_translation_toast, show_translation_error, show_translation_toast}};
 use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::{
-    mem::size_of,
     sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Wry};
 use windows::Win32::{
-    Foundation::POINT,
     UI::{
         Input::KeyboardAndMouse::{
-            SendInput, INPUT, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT,
+            VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT,
         },
-        WindowsAndMessaging::GetCursorPos,
     },
 };
 
@@ -22,10 +18,6 @@ const C_KEY: u32 = 0x43;
 const V_KEY: u32 = 0x56;
 const DOUBLE_C_WINDOW: Duration = Duration::from_millis(500);
 const CLIPBOARD_SETTLE_DELAY: Duration = Duration::from_millis(120);
-const TOAST_LABEL: &str = "toast";
-const STARTUP_TOAST_HEIGHT: u32 = 104;
-const TRANSLATION_TOAST_HEIGHT: u32 = 220;
-const TOAST_WIDTH: u32 = 360;
 
 /// A parsed hotkey definition.
 /// Examples:
@@ -166,21 +158,6 @@ struct MultiPressState {
     clipboard_backup: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-struct TranslationToastPayload {
-    original: String,
-    translated: String,
-    source_lang: String,
-    target_lang: String,
-    reverse: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct AppToastPayload {
-    title: String,
-    message: String,
-}
-
 #[derive(Debug, Serialize)]
 struct LibreTranslateRequest<'a> {
     q: &'a str,
@@ -205,17 +182,12 @@ struct LibreTranslateError {
 static CONFIG: OnceLock<Mutex<RuntimeConfig>> = OnceLock::new();
 static TRANSLATE_PRESS_STATE: OnceLock<Mutex<MultiPressState>> = OnceLock::new();
 static REVERSE_PRESS_STATE: OnceLock<Mutex<MultiPressState>> = OnceLock::new();
-static APP_HANDLE: OnceLock<AppHandle<Wry>> = OnceLock::new();
 
 pub fn configure(config: &TranslateConfig) {
     let mut runtime_config = config_store()
         .lock()
         .expect("translate config mutex poisoned");
     *runtime_config = RuntimeConfig::from_config(config);
-}
-
-pub fn set_app_handle(app: AppHandle<Wry>) {
-    let _ = APP_HANDLE.set(app);
 }
 
 pub fn handle_keydown(vk_code: u32, modifiers: ModifierState) -> bool {
@@ -529,15 +501,8 @@ pub fn replace_with_translation(text: String) -> Result<(), String> {
         return Err("нечего вставлять".to_string());
     }
 
-    // Hide toast first so focus returns to the previous (target) window.
-    if let Some(app) = APP_HANDLE.get() {
-        if let Some(window) = app.get_webview_window(TOAST_LABEL) {
-            let _ = window.hide();
-        }
-    }
+    hide_translation_toast();
 
-    // Run the rest off the main thread so the IPC call returns immediately
-    // and the OS has time to refocus the previous foreground window.
     thread::spawn(move || {
         let backup = current_clipboard_text();
 
@@ -572,151 +537,6 @@ pub fn copy_to_clipboard(text: String) -> Result<(), String> {
         .map_err(|error| format!("не удалось записать в буфер обмена ({error})"))
 }
 
-pub fn hide_translation_toast() {
-    if let Some(app) = APP_HANDLE.get() {
-        if let Some(window) = app.get_webview_window(TOAST_LABEL) {
-            let _ = window.hide();
-        }
-    }
-}
-
-pub fn show_startup_toast() {
-    let Some(app) = APP_HANDLE.get() else {
-        return;
-    };
-    let app = app.clone();
-
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(700));
-
-        let Some(window) = app.get_webview_window(TOAST_LABEL) else {
-            return;
-        };
-
-        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-            TOAST_WIDTH,
-            STARTUP_TOAST_HEIGHT,
-        )));
-        let _ = position_startup_toast_window(&window);
-        let _ = window.emit(
-            "show-app-toast",
-            AppToastPayload {
-                title: "KeyTweak запущен".to_string(),
-                message: "Горячие клавиши и Caps Lock работают в фоне.".to_string(),
-            },
-        );
-        let _ = window.show();
-    });
-}
-
-fn show_translation_toast(payload: TranslationToastPayload) {
-    let Some(app) = APP_HANDLE.get() else {
-        return;
-    };
-    let Some(window) = app.get_webview_window(TOAST_LABEL) else {
-        return;
-    };
-
-    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
-        TOAST_WIDTH,
-        TRANSLATION_TOAST_HEIGHT,
-    )));
-    let _ = position_toast_window(&window);
-    let _ = window.emit("show-translation", payload);
-    let _ = window.show();
-    let _ = window.set_focus();
-}
-
-fn show_translation_error(message: &str) {
-    show_translation_toast(TranslationToastPayload {
-        original: String::new(),
-        translated: message.to_string(),
-        source_lang: String::new(),
-        target_lang: String::new(),
-        reverse: false,
-    });
-}
-
-fn position_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::Result<()> {
-    let Some(monitor) = window.current_monitor()? else {
-        return Ok(());
-    };
-    let monitor_pos = monitor.position();
-    let monitor_size = monitor.size();
-    let window_size = window.outer_size()?;
-
-    let cursor = cursor_position().unwrap_or_else(|| {
-        PhysicalPosition::new(
-            monitor_pos.x + monitor_size.width as i32 / 2,
-            monitor_pos.y + monitor_size.height as i32 / 2,
-        )
-    });
-
-    // Default offset: place the toast slightly below-right of the cursor.
-    const OFFSET_X: i32 = 16;
-    const OFFSET_Y: i32 = 16;
-
-    let win_w = window_size.width as i32;
-    let win_h = window_size.height as i32;
-
-    let mut x = cursor.x + OFFSET_X;
-    let mut y = cursor.y + OFFSET_Y;
-
-    let monitor_left = monitor_pos.x;
-    let monitor_top = monitor_pos.y;
-    let monitor_right = monitor_pos.x + monitor_size.width as i32;
-    let monitor_bottom = monitor_pos.y + monitor_size.height as i32;
-
-    // If the toast would overflow the right edge, flip to the left of the cursor.
-    if x + win_w > monitor_right {
-        x = cursor.x - OFFSET_X - win_w;
-    }
-    // If the toast would overflow the bottom edge, flip above the cursor.
-    if y + win_h > monitor_bottom {
-        y = cursor.y - OFFSET_Y - win_h;
-    }
-
-    // Clamp to monitor bounds in case both flips still leave it off-screen.
-    let margin = 8;
-    if x < monitor_left + margin {
-        x = monitor_left + margin;
-    }
-    if y < monitor_top + margin {
-        y = monitor_top + margin;
-    }
-    if x + win_w > monitor_right - margin {
-        x = monitor_right - margin - win_w;
-    }
-    if y + win_h > monitor_bottom - margin {
-        y = monitor_bottom - margin - win_h;
-    }
-
-    window.set_position(PhysicalPosition::new(x, y))
-}
-
-fn position_startup_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::Result<()> {
-    let Some(monitor) = window.current_monitor()? else {
-        return Ok(());
-    };
-    let monitor_pos = monitor.position();
-    let monitor_size = monitor.size();
-    let window_size = window.outer_size()?;
-    let margin = 18;
-
-    let x = monitor_pos.x + monitor_size.width as i32 - window_size.width as i32 - margin;
-    let y = monitor_pos.y + monitor_size.height as i32 - window_size.height as i32 - margin;
-
-    window.set_position(PhysicalPosition::new(x, y))
-}
-
-fn cursor_position() -> Option<PhysicalPosition<i32>> {
-    let mut point = POINT { x: 0, y: 0 };
-    unsafe {
-        GetCursorPos(&mut point).ok()?;
-    }
-    Some(PhysicalPosition::new(point.x, point.y))
-}
-
 fn send_ctrl_c() {
     let modifiers = ModifierState::current();
     let held: [(bool, VIRTUAL_KEY); 3] = [
@@ -725,41 +545,37 @@ fn send_ctrl_c() {
         (modifiers.win, VK_LWIN),
     ];
 
-    let mut inputs: Vec<INPUT> = Vec::new();
+    let mut inputs: Vec<_> = Vec::new();
 
     for &(active, vkey) in &held {
-        if active { inputs.push(keys::vk(vkey, true)); }
+        if active { inputs.push(press(vkey, true)); }
     }
     if !modifiers.ctrl {
-        inputs.push(keys::vk(VK_CONTROL, false));
+        inputs.push(press(VK_CONTROL, false));
     }
 
-    inputs.push(keys::vk(VIRTUAL_KEY(C_KEY as u16), false));
-    inputs.push(keys::vk(VIRTUAL_KEY(C_KEY as u16), true));
+    inputs.push(press_code(C_KEY, false));
+    inputs.push(press_code(C_KEY, true));
 
     if !modifiers.ctrl {
-        inputs.push(keys::vk(VK_CONTROL, true));
+        inputs.push(press(VK_CONTROL, true));
     }
     for &(active, vkey) in &held {
-        if active { inputs.push(keys::vk(vkey, false)); }
+        if active { inputs.push(press(vkey, false)); }
     }
 
-    unsafe {
-        let _ = SendInput(&inputs, size_of::<INPUT>() as i32);
-    }
+    keys::send_inputs(&inputs);
 }
 
 fn send_ctrl_v() {
     let inputs = [
-        keys::vk(VK_CONTROL, false),
-        keys::vk(VIRTUAL_KEY(V_KEY as u16), false),
-        keys::vk(VIRTUAL_KEY(V_KEY as u16), true),
-        keys::vk(VK_CONTROL, true),
+        press(VK_CONTROL, false),
+        press_code(V_KEY, false),
+        press_code(V_KEY, true),
+        press(VK_CONTROL, true),
     ];
 
-    unsafe {
-        let _ = SendInput(&inputs, size_of::<INPUT>() as i32);
-    }
+    keys::send_inputs(&inputs);
 }
 
 fn current_clipboard_text() -> Option<String> {

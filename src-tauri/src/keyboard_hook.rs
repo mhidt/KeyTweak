@@ -6,8 +6,8 @@ use windows::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::{
         Input::KeyboardAndMouse::{
-            VK_CAPITAL, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU,
-            VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
+            VIRTUAL_KEY, VK_CAPITAL, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+            VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
         },
         WindowsAndMessaging::{
             CallNextHookEx, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION, HHOOK,
@@ -151,16 +151,15 @@ impl ModifierState {
 }
 
 fn update_modifier_state(vk_code: u32, pressed: bool) {
-    if matches!(vk_code, code if code == VK_SHIFT.0 as u32 || code == VK_LSHIFT.0 as u32 || code == VK_RSHIFT.0 as u32)
-    {
+    let vk = VIRTUAL_KEY(vk_code as u16);
+
+    if matches!(vk, VK_SHIFT | VK_LSHIFT | VK_RSHIFT) {
         SHIFT_DOWN.store(pressed, Ordering::Relaxed);
-    } else if matches!(vk_code, code if code == VK_CONTROL.0 as u32 || code == VK_LCONTROL.0 as u32 || code == VK_RCONTROL.0 as u32)
-    {
+    } else if matches!(vk, VK_CONTROL | VK_LCONTROL | VK_RCONTROL) {
         CTRL_DOWN.store(pressed, Ordering::Relaxed);
-    } else if matches!(vk_code, code if code == VK_MENU.0 as u32 || code == VK_LMENU.0 as u32 || code == VK_RMENU.0 as u32)
-    {
+    } else if matches!(vk, VK_MENU | VK_LMENU | VK_RMENU) {
         ALT_DOWN.store(pressed, Ordering::Relaxed);
-    } else if matches!(vk_code, code if code == VK_LWIN.0 as u32 || code == VK_RWIN.0 as u32) {
+    } else if matches!(vk, VK_LWIN | VK_RWIN) {
         WIN_DOWN.store(pressed, Ordering::Relaxed);
     }
 }

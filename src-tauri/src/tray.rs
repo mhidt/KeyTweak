@@ -92,14 +92,5 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 }
 
 fn tray_tooltip<R: Runtime>(app: &AppHandle<R>) -> String {
-    let paused = app
-        .try_state::<AppState>()
-        .map(|state| state.caps_paused())
-        .unwrap_or(false);
-
-    if paused {
-        "KeyTweak — Переключение Caps Lock приостановлено".to_string()
-    } else {
-        "KeyTweak — Переключение Caps Lock активно".to_string()
-    }
+    "KeyTweak".to_string()
 }

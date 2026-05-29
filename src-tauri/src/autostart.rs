@@ -54,151 +54,135 @@ pub fn is_auto_start() -> Result<bool> {
 }
 
 #[cfg(windows)]
-fn set_run_entry(exe_path: &Path) -> Result<()> {
+mod registry {
+    use super::*;
     use std::slice;
+    use std::os::windows::ffi::OsStrExt;
     use windows::{
         core::PCWSTR,
         Win32::System::Registry::{
-            RegCloseKey, RegCreateKeyExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER,
-            KEY_SET_VALUE, REG_OPTION_NON_VOLATILE, REG_SZ,
+            HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_OPTION_NON_VOLATILE,
+            REG_SAM_FLAGS, REG_SZ, RegCloseKey, RegCreateKeyExW, RegDeleteValueW,
+            RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
         },
     };
 
-    let key_path = wide_null(RUN_KEY_PATH);
-    let value_name = wide_null(APP_NAME);
-    let command = wide_null(&format!("\"{}\"", exe_path.display()));
-    let bytes = unsafe {
-        slice::from_raw_parts(command.as_ptr().cast::<u8>(), command.len() * size_of::<u16>())
-    };
-    let mut key = HKEY::default();
-
-    let status = unsafe {
-        RegCreateKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            0,
-            PCWSTR::null(),
-            REG_OPTION_NON_VOLATILE,
-            KEY_SET_VALUE,
-            None,
-            &mut key,
-            None,
-        )
-    };
-    if status.0 != 0 {
-        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )));
+    fn wide_null(value: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
+        value
+            .as_ref()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     }
 
-    let status = unsafe {
-        RegSetValueExW(key, PCWSTR(value_name.as_ptr()), 0, REG_SZ, Some(bytes))
-    };
-    unsafe {
-        let _ = RegCloseKey(key);
+    fn reg_err(status: windows::Win32::Foundation::WIN32_ERROR) -> AutoStartError {
+        AutoStartError::Registry(io::Error::from_raw_os_error(status.0 as i32))
     }
 
-    if status.0 == 0 {
-        Ok(())
-    } else {
-        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )))
+    fn is_not_found(code: u32) -> bool {
+        code == 2 || code == 3
+    }
+
+    fn open_run_key(access: REG_SAM_FLAGS) -> Result<Option<HKEY>> {
+        let key_path = wide_null(RUN_KEY_PATH);
+        let mut key = HKEY::default();
+
+        let status = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key_path.as_ptr()),
+                0,
+                access,
+                &mut key,
+            )
+        };
+        if is_not_found(status.0) {
+            return Ok(None);
+        }
+        if status.0 != 0 {
+            return Err(reg_err(status));
+        }
+
+        Ok(Some(key))
+    }
+
+    pub fn set_run_entry(exe_path: &Path) -> Result<()> {
+        let key_path = wide_null(RUN_KEY_PATH);
+        let value_name = wide_null(APP_NAME);
+        let command = wide_null(&format!("\"{}\"", exe_path.display()));
+        let bytes = unsafe {
+            slice::from_raw_parts(command.as_ptr().cast::<u8>(), command.len() * size_of::<u16>())
+        };
+        let mut key = HKEY::default();
+
+        let status = unsafe {
+            RegCreateKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(key_path.as_ptr()),
+                0,
+                PCWSTR::null(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_SET_VALUE,
+                None,
+                &mut key,
+                None,
+            )
+        };
+        if status.0 != 0 {
+            return Err(reg_err(status));
+        }
+
+        let status = unsafe {
+            RegSetValueExW(key, PCWSTR(value_name.as_ptr()), 0, REG_SZ, Some(bytes))
+        };
+        unsafe { let _ = RegCloseKey(key); }
+
+        if status.0 == 0 {
+            Ok(())
+        } else {
+            Err(reg_err(status))
+        }
+    }
+
+    pub fn delete_run_entry() -> Result<()> {
+        let Some(key) = open_run_key(KEY_SET_VALUE)? else {
+            return Ok(());
+        };
+        let value_name = wide_null(APP_NAME);
+
+        let status = unsafe { RegDeleteValueW(key, PCWSTR(value_name.as_ptr())) };
+        unsafe { let _ = RegCloseKey(key); }
+
+        if status.0 == 0 || is_not_found(status.0) {
+            Ok(())
+        } else {
+            Err(reg_err(status))
+        }
+    }
+
+    pub fn run_entry_exists() -> Result<bool> {
+        let Some(key) = open_run_key(KEY_QUERY_VALUE)? else {
+            return Ok(false);
+        };
+        let value_name = wide_null(APP_NAME);
+
+        let status = unsafe {
+            RegQueryValueExW(key, PCWSTR(value_name.as_ptr()), None, None, None, None)
+        };
+        unsafe { let _ = RegCloseKey(key); }
+
+        if status.0 == 0 {
+            Ok(true)
+        } else if is_not_found(status.0) {
+            Ok(false)
+        } else {
+            Err(reg_err(status))
+        }
     }
 }
 
 #[cfg(windows)]
-fn delete_run_entry() -> Result<()> {
-    use windows::{
-        core::PCWSTR,
-        Win32::System::Registry::{
-            RegCloseKey, RegDeleteValueW, RegOpenKeyExW, HKEY, HKEY_CURRENT_USER, KEY_SET_VALUE,
-        },
-    };
-
-    let key_path = wide_null(RUN_KEY_PATH);
-    let value_name = wide_null(APP_NAME);
-    let mut key = HKEY::default();
-
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            0,
-            KEY_SET_VALUE,
-            &mut key,
-        )
-    };
-    if is_not_found(status.0) {
-        return Ok(());
-    }
-    if status.0 != 0 {
-        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )));
-    }
-
-    let status = unsafe { RegDeleteValueW(key, PCWSTR(value_name.as_ptr())) };
-    unsafe {
-        let _ = RegCloseKey(key);
-    }
-
-    if status.0 == 0 || is_not_found(status.0) {
-        Ok(())
-    } else {
-        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )))
-    }
-}
-
-#[cfg(windows)]
-fn run_entry_exists() -> Result<bool> {
-    use windows::{
-        core::PCWSTR,
-        Win32::System::Registry::{
-            RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE,
-        },
-    };
-
-    let key_path = wide_null(RUN_KEY_PATH);
-    let value_name = wide_null(APP_NAME);
-    let mut key = HKEY::default();
-
-    let status = unsafe {
-        RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            PCWSTR(key_path.as_ptr()),
-            0,
-            KEY_QUERY_VALUE,
-            &mut key,
-        )
-    };
-    if is_not_found(status.0) {
-        return Ok(false);
-    }
-    if status.0 != 0 {
-        return Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )));
-    }
-
-    let status =
-        unsafe { RegQueryValueExW(key, PCWSTR(value_name.as_ptr()), None, None, None, None) };
-    unsafe {
-        let _ = RegCloseKey(key);
-    }
-
-    if status.0 == 0 {
-        Ok(true)
-    } else if is_not_found(status.0) {
-        Ok(false)
-    } else {
-        Err(AutoStartError::Registry(io::Error::from_raw_os_error(
-            status.0 as i32,
-        )))
-    }
-}
+use registry::{set_run_entry, delete_run_entry, run_entry_exists};
 
 #[cfg(not(windows))]
 fn set_run_entry(_exe_path: &Path) -> Result<()> {
@@ -213,20 +197,4 @@ fn delete_run_entry() -> Result<()> {
 #[cfg(not(windows))]
 fn run_entry_exists() -> Result<bool> {
     Ok(false)
-}
-
-#[cfg(windows)]
-fn wide_null(value: impl AsRef<std::ffi::OsStr>) -> Vec<u16> {
-    use std::os::windows::ffi::OsStrExt;
-
-    value
-        .as_ref()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
-}
-
-#[cfg(windows)]
-fn is_not_found(code: u32) -> bool {
-    code == 2 || code == 3
 }
