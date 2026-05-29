@@ -54,6 +54,23 @@ pub fn configure(config: &KeyRemapConfig) {
     };
 }
 
+/// Returns true if there is an active mapping whose source matches Right Alt
+/// (either `VK_RMENU` specifically or the `AnyAlt` wildcard).
+pub fn has_right_alt_mapping() -> bool {
+    let config = config_store()
+        .lock()
+        .expect("key remap config mutex poisoned");
+
+    if !config.enabled {
+        return false;
+    }
+
+    config
+        .mappings
+        .iter()
+        .any(|m| m.from.matches_vk(VK_RMENU.0 as u32))
+}
+
 pub fn handle_key_event(vk_code: u32, is_keyup: bool) -> bool {
     let config = config_store()
         .lock()

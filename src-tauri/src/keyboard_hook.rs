@@ -82,6 +82,19 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let is_keyup = wparam.0 as u32 == WM_KEYUP || wparam.0 as u32 == WM_SYSKEYUP;
         let is_injected = event.flags.contains(LLKHF_INJECTED);
 
+        // On AltGr-capable keyboard layouts (e.g. Russian), Windows injects a
+        // fake Left Ctrl event right before every Right Alt event. The fake Ctrl
+        // has scanCode == 0x21D (real LCtrl has 0x1D). When Right Alt is being
+        // remapped we must suppress this fake Ctrl so it doesn't leak through.
+        if (is_keydown || is_keyup)
+            && !is_injected
+            && event.vkCode == VK_LCONTROL.0 as u32
+            && event.scanCode == 0x21D
+            && key_remap::has_right_alt_mapping()
+        {
+            return LRESULT(1);
+        }
+
         if (is_keydown || is_keyup)
             && !is_injected
             && key_remap::handle_key_event(event.vkCode, is_keyup)
