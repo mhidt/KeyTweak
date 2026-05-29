@@ -6,7 +6,6 @@ import {
   setConfig,
 } from "./lib/commands";
 import type { Config } from "./types/config";
-import { ApiKeysSettings } from "./components/ApiKeysSettings";
 import { AutoReplaceSettings } from "./components/AutoReplaceSettings";
 import { CapsLockSettings } from "./components/CapsLockSettings";
 import { ExceptionsSettings } from "./components/ExceptionsSettings";
@@ -14,6 +13,7 @@ import { GeneralSettings } from "./components/GeneralSettings";
 import { KeyRemapSettings } from "./components/KeyRemapSettings";
 import { PanelShell } from "./components/PanelShell";
 import { Sidebar, type TabId } from "./components/Sidebar";
+import { TitleBar } from "./components/TitleBar";
 import { TranslateSettings } from "./components/TranslateSettings";
 
 export function App() {
@@ -78,8 +78,6 @@ export function App() {
         return "Перевод";
       case "exceptions":
         return "Исключения";
-      case "api":
-        return "API-ключи";
       case "general":
         return "Общие";
     }
@@ -146,31 +144,32 @@ export function App() {
         return <TranslateSettings config={config} onChange={setConfigState} />;
       case "exceptions":
         return <ExceptionsSettings config={config} onChange={setConfigState} />;
-      case "api":
-        return <ApiKeysSettings config={config} onChange={setConfigState} />;
       case "general":
         return <GeneralSettings config={config} onChange={setConfigState} />;
     }
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar activeTab={activeTab} onChange={setActiveTab} />
-      <main className="min-w-0 flex-1">
-        {config ? (
-          <PanelShell
-            title={title}
-            onSave={save}
-            onCancel={cancel}
-            status={status}
-            saving={saving}
-          >
-            {content()}
-          </PanelShell>
-        ) : (
-          content()
-        )}
-      </main>
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <TitleBar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar activeTab={activeTab} onChange={setActiveTab} />
+        <main className="min-w-0 flex-1">
+          {config ? (
+            <PanelShell
+              title={title}
+              onSave={save}
+              onCancel={cancel}
+              status={status}
+              saving={saving}
+            >
+              {content()}
+            </PanelShell>
+          ) : (
+            content()
+          )}
+        </main>
+      </div>
     </div>
   );
 }

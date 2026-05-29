@@ -16,7 +16,8 @@
         "resizable": false,
         "visible": false,
         "skipTaskbar": false,
-        "center": true
+        "center": true,
+        "decorations": false
       },
       {
         "label": "toast",

@@ -10,13 +10,14 @@ const TRAY_ID: &str = "main";
 const MENU_SETTINGS_ID: &str = "settings";
 const MENU_PAUSE_ID: &str = "pause_caps";
 const MENU_EXIT_ID: &str = "exit";
+const TOOLTIP: &str = "KeyTweak";
 
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = build_menu(app)?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(tray_icon())
-        .tooltip(tray_tooltip(app))
+        .tooltip(TOOLTIP)
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             MENU_SETTINGS_ID => {
@@ -67,7 +68,7 @@ pub fn rebuild_tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let menu = build_menu(app)?;
         tray.set_menu(Some(menu))?;
-        tray.set_tooltip(Some(&tray_tooltip(app)))?;
+        tray.set_tooltip(Some(&TOOLTIP))?;
     }
 
     Ok(())
@@ -89,8 +90,4 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let exit = MenuItem::with_id(app, MENU_EXIT_ID, "Выход", true, None::<&str>)?;
 
     Menu::with_items(app, &[&settings, &pause, &exit])
-}
-
-fn tray_tooltip<R: Runtime>(app: &AppHandle<R>) -> String {
-    "KeyTweak".to_string()
 }

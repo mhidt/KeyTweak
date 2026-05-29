@@ -77,3 +77,14 @@ input,
 select {
   font: inherit;
 }
+
+/* Invert titlebar icon in dark theme */
+:root[data-theme="dark"] .titlebar-icon {
+  filter: invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .titlebar-icon {
+    filter: invert(1);
+  }
+}

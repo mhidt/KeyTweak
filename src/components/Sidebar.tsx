@@ -2,7 +2,6 @@ import {
   Ban,
   FileText,
   Globe,
-  Key,
   Keyboard,
   Replace,
   Zap,
@@ -15,7 +14,6 @@ export type TabId =
   | "keyremap"
   | "translate"
   | "exceptions"
-  | "api"
   | "general";
 
 const items = [
@@ -23,8 +21,7 @@ const items = [
   { id: "autoreplace", label: "Автозамена", icon: FileText, group: "Модули" },
   { id: "keyremap", label: "Клавиши", icon: Replace, group: "Модули" },
   { id: "translate", label: "Перевод", icon: Globe, group: "Модули" },
-  { id: "exceptions", label: "Исключения", icon: Ban, group: "Модули" },
-  { id: "api", label: "API-ключи", icon: Key, group: "Система" },
+  { id: "exceptions", label: "Исключения", icon: Ban, group: "Система" },
   { id: "general", label: "Общие", icon: Zap, group: "Система" },
 ] satisfies Array<{
   id: TabId;
