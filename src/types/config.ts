@@ -26,6 +26,7 @@ export interface AutoReplaceConfig {
   whole_words_only: boolean;
   case_sensitive: boolean;
   replacements: Replacement[];
+  exception_mode: ExceptionMode;
   exceptions: ProgramException[];
 }
 
@@ -36,7 +37,6 @@ export interface Replacement {
 
 export interface ProgramException {
   program: string;
-  mode: ExceptionMode;
 }
 
 export interface KeyRemapConfig {

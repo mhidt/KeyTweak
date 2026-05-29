@@ -39,6 +39,7 @@ struct RuntimeConfig {
     whole_words_only: bool,
     case_sensitive: bool,
     replacements: Vec<Replacement>,
+    exception_mode: ExceptionMode,
     exceptions: Vec<ProgramException>,
 }
 
@@ -58,6 +59,7 @@ impl RuntimeConfig {
             whole_words_only: config.whole_words_only,
             case_sensitive: config.case_sensitive,
             replacements: config.replacements.clone(),
+            exception_mode: config.exception_mode,
             exceptions: config.exceptions.clone(),
         }
     }
@@ -258,19 +260,15 @@ fn is_excluded(config: &RuntimeConfig) -> bool {
         return false;
     };
 
-    let (in_blacklist, in_whitelist, has_whitelist) = config.exceptions.iter().fold(
-        (false, false, false),
-        |(in_bl, in_wl, has_wl), entry| {
-            let matches = same_process_name(&entry.program, &process_name);
-            (
-                in_bl || (entry.mode == ExceptionMode::Blacklist && matches),
-                in_wl || (entry.mode == ExceptionMode::Whitelist && matches),
-                has_wl || entry.mode == ExceptionMode::Whitelist,
-            )
-        },
-    );
+    let in_list = config
+        .exceptions
+        .iter()
+        .any(|entry| same_process_name(&entry.program, &process_name));
 
-    in_blacklist || (has_whitelist && !in_whitelist)
+    match config.exception_mode {
+        ExceptionMode::Blacklist => in_list,
+        ExceptionMode::Whitelist => !in_list,
+    }
 }
 
 fn foreground_process_name() -> Option<String> {

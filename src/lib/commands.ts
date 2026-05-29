@@ -22,6 +22,7 @@ const defaultConfig: Config = {
     whole_words_only: true,
     case_sensitive: false,
     replacements: [],
+    exception_mode: "blacklist",
     exceptions: [],
   },
   key_remap: {

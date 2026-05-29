@@ -102,6 +102,8 @@ pub struct AutoReplaceConfig {
     #[serde(default)]
     pub replacements: Vec<Replacement>,
     #[serde(default)]
+    pub exception_mode: ExceptionMode,
+    #[serde(default)]
     pub exceptions: Vec<ProgramException>,
 }
 
@@ -115,6 +117,7 @@ impl Default for AutoReplaceConfig {
             whole_words_only: true,
             case_sensitive: false,
             replacements: Vec::new(),
+            exception_mode: ExceptionMode::default(),
             exceptions: Vec::new(),
         }
     }
@@ -129,8 +132,6 @@ pub struct Replacement {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramException {
     pub program: String,
-    #[serde(default)]
-    pub mode: ExceptionMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
