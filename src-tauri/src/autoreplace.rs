@@ -1,6 +1,7 @@
 use crate::{
     config::{AutoReplaceConfig, ExceptionMode, ProgramException, Replacement},
     keyboard_hook::ModifierState,
+    keys,
 };
 use std::{
     ffi::OsString,
@@ -243,8 +244,8 @@ fn replace_word(word: &str, replacement: &str) -> bool {
     let mut inputs = Vec::new();
 
     for _ in word.chars() {
-        inputs.push(vk_input(VK_BACK, false));
-        inputs.push(vk_input(VK_BACK, true));
+        inputs.push(keys::vk(VK_BACK, false));
+        inputs.push(keys::vk(VK_BACK, true));
     }
 
     for unit in replacement.encode_utf16() {
@@ -254,25 +255,6 @@ fn replace_word(word: &str, replacement: &str) -> bool {
 
     let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
     sent == inputs.len() as u32
-}
-
-fn vk_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: if key_up {
-                    KEYEVENTF_KEYUP
-                } else {
-                    Default::default()
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
-    }
 }
 
 fn unicode_input(unit: u16, key_up: bool) -> INPUT {

@@ -124,10 +124,10 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
           size="sm"
           onClick={() => inputRef.current?.click()}
         >
-          <Upload size={14} /> Импорт JSON
+          <Download size={14} /> Импорт JSON
         </Button>
         <Button variant="outline" size="sm" onClick={exportJson}>
-          <Download size={14} /> Экспорт JSON
+          <Upload size={14} /> Экспорт JSON
         </Button>
       </div>
 

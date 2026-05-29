@@ -1,4 +1,4 @@
-use crate::{config::TranslateConfig, keyboard_hook::ModifierState};
+use crate::{config::TranslateConfig, keyboard_hook::ModifierState, keys};
 use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -12,8 +12,7 @@ use windows::Win32::{
     Foundation::POINT,
     UI::{
         Input::KeyboardAndMouse::{
-            SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
-            VK_CONTROL,
+            SendInput, INPUT, VIRTUAL_KEY, VK_CONTROL, VK_LWIN, VK_MENU, VK_SHIFT,
         },
         WindowsAndMessaging::GetCursorPos,
     },
@@ -28,14 +27,101 @@ const STARTUP_TOAST_HEIGHT: u32 = 104;
 const TRANSLATION_TOAST_HEIGHT: u32 = 220;
 const TOAST_WIDTH: u32 = 360;
 
+/// A parsed hotkey definition.
+/// Examples:
+///   "ctrl+alt+r"   -> modifiers={ctrl,alt}, key=0x52, repeat_count=1
+///   "ctrl+c+c"     -> modifiers={ctrl}, key=0x43, repeat_count=2
+///   "shift+alt+r"  -> modifiers={shift,alt}, key=0x52, repeat_count=1
+#[derive(Debug, Clone, PartialEq)]
+struct ParsedHotkey {
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+    win: bool,
+    /// The primary (non-modifier) virtual key code.
+    vk_code: u32,
+    /// How many times the key must be pressed in sequence (1 = single, 2 = double, etc.)
+    repeat_count: u32,
+}
+
+impl ParsedHotkey {
+    fn parse(hotkey_str: &str) -> Option<Self> {
+        let parts: Vec<&str> = hotkey_str.split('+').map(|s| s.trim()).collect();
+        if parts.is_empty() {
+            return None;
+        }
+
+        let mut ctrl = false;
+        let mut shift = false;
+        let mut alt = false;
+        let mut win = false;
+        let mut main_key: Option<u32> = None;
+        let mut repeat_count: u32 = 0;
+
+        for part in &parts {
+            let lower = part.to_ascii_lowercase();
+            match lower.as_str() {
+                "ctrl" | "control" => ctrl = true,
+                "shift" => shift = true,
+                "alt" => alt = true,
+                "win" | "super" | "meta" => win = true,
+                _ => {
+                    let vk = keys::key_name_to_vk(&lower)?.0 as u32;
+                    if let Some(existing) = main_key {
+                        if existing == vk {
+                            // Same key repeated (e.g. ctrl+c+c)
+                            repeat_count += 1;
+                        } else {
+                            // Different non-modifier keys — invalid
+                            return None;
+                        }
+                    } else {
+                        main_key = Some(vk);
+                        repeat_count = 1;
+                    }
+                }
+            }
+        }
+
+        let vk_code = main_key?;
+
+        Some(ParsedHotkey {
+            ctrl,
+            shift,
+            alt,
+            win,
+            vk_code,
+            repeat_count,
+        })
+    }
+
+    /// Check if the current modifiers match this hotkey's modifier requirements.
+    fn modifiers_match(&self, modifiers: ModifierState) -> bool {
+        self.ctrl == modifiers.ctrl
+            && self.shift == modifiers.shift
+            && self.alt == modifiers.alt
+            && self.win == modifiers.win
+    }
+
+    /// Check if the given vk_code matches this hotkey's primary key.
+    fn key_matches(&self, vk_code: u32) -> bool {
+        self.vk_code == vk_code
+    }
+
+    /// Whether this hotkey requires multiple presses of the same key.
+    fn is_multi_press(&self) -> bool {
+        self.repeat_count > 1
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RuntimeConfig {
     server_url: String,
     api_key: String,
     auto_detect_language: bool,
     target_language: String,
-    hotkey_translate: String,
-    hotkey_reverse: String,
+    hotkey_translate: ParsedHotkey,
+    hotkey_reverse: ParsedHotkey,
 }
 
 impl Default for RuntimeConfig {
@@ -51,15 +137,32 @@ impl RuntimeConfig {
             api_key: config.api_key.clone(),
             auto_detect_language: config.auto_detect_language,
             target_language: config.target_language.clone(),
-            hotkey_translate: config.hotkey_translate.clone(),
-            hotkey_reverse: config.hotkey_reverse.clone(),
+            hotkey_translate: ParsedHotkey::parse(&config.hotkey_translate)
+                .unwrap_or(ParsedHotkey {
+                    ctrl: true,
+                    shift: false,
+                    alt: false,
+                    win: false,
+                    vk_code: 0x43, // C
+                    repeat_count: 2,
+                }),
+            hotkey_reverse: ParsedHotkey::parse(&config.hotkey_reverse)
+                .unwrap_or(ParsedHotkey {
+                    ctrl: true,
+                    shift: true,
+                    alt: false,
+                    win: false,
+                    vk_code: 0x43, // C
+                    repeat_count: 1,
+                }),
         }
     }
 }
 
 #[derive(Debug, Default)]
-struct CtrlCState {
+struct MultiPressState {
     last_press: Option<Instant>,
+    press_count: u32,
     clipboard_backup: Option<String>,
 }
 
@@ -100,7 +203,8 @@ struct LibreTranslateError {
 }
 
 static CONFIG: OnceLock<Mutex<RuntimeConfig>> = OnceLock::new();
-static CTRL_C_STATE: OnceLock<Mutex<CtrlCState>> = OnceLock::new();
+static TRANSLATE_PRESS_STATE: OnceLock<Mutex<MultiPressState>> = OnceLock::new();
+static REVERSE_PRESS_STATE: OnceLock<Mutex<MultiPressState>> = OnceLock::new();
 static APP_HANDLE: OnceLock<AppHandle<Wry>> = OnceLock::new();
 
 pub fn configure(config: &TranslateConfig) {
@@ -115,60 +219,171 @@ pub fn set_app_handle(app: AppHandle<Wry>) {
 }
 
 pub fn handle_keydown(vk_code: u32, modifiers: ModifierState) -> bool {
-    if vk_code != C_KEY {
-        if !modifiers.ctrl {
-            reset_ctrl_c_state();
-        }
-        return false;
-    }
-
     let config = current_config();
 
-    if modifiers.ctrl && modifiers.shift && !modifiers.alt && !modifiers.win {
-        if config.hotkey_reverse.eq_ignore_ascii_case("ctrl+shift+c") {
-            if config.auto_detect_language {
-                return false;
-            }
-            trigger_reverse_translate(config);
+    // Check translate hotkey
+    let translate_result = check_hotkey(
+        vk_code,
+        modifiers,
+        &config.hotkey_translate,
+        translate_press_state(),
+    );
+
+    match translate_result {
+        HotkeyMatchResult::Triggered => {
+            trigger_translate(config);
             return true;
         }
-        return false;
+        HotkeyMatchResult::Accumulating => {
+            // For multi-press hotkeys like ctrl+c+c, don't consume the event
+            // so Ctrl+C still performs copy on the first press.
+            return false;
+        }
+        HotkeyMatchResult::NoMatch => {}
     }
 
-    if modifiers.ctrl
-        && !modifiers.shift
-        && !modifiers.alt
-        && !modifiers.win
-        && config.hotkey_translate.eq_ignore_ascii_case("ctrl+c+c")
-    {
-        return handle_ctrl_c_for_translate();
+    // Check reverse translate hotkey (only if not auto-detect)
+    if !config.auto_detect_language {
+        let reverse_result = check_hotkey(
+            vk_code,
+            modifiers,
+            &config.hotkey_reverse,
+            reverse_press_state(),
+        );
+
+        match reverse_result {
+            HotkeyMatchResult::Triggered => {
+                trigger_reverse_translate(config);
+                return true;
+            }
+            HotkeyMatchResult::Accumulating => {
+                return false;
+            }
+            HotkeyMatchResult::NoMatch => {}
+        }
     }
+
+    // Reset multi-press states if a non-matching key is pressed without the
+    // required modifiers held.
+    reset_state_if_needed(vk_code, modifiers, &config);
 
     false
 }
 
-fn handle_ctrl_c_for_translate() -> bool {
-    let now = Instant::now();
-    let mut state = ctrl_c_state()
-        .lock()
-        .expect("translate ctrl+c mutex poisoned");
+#[derive(Debug, PartialEq)]
+enum HotkeyMatchResult {
+    /// The hotkey sequence is fully matched — action should fire.
+    Triggered,
+    /// A multi-press hotkey is accumulating presses (not yet complete).
+    Accumulating,
+    /// This keypress does not match the hotkey at all.
+    NoMatch,
+}
 
-    let is_double_press = state
+fn check_hotkey(
+    vk_code: u32,
+    modifiers: ModifierState,
+    hotkey: &ParsedHotkey,
+    state: &Mutex<MultiPressState>,
+) -> HotkeyMatchResult {
+    if !hotkey.modifiers_match(modifiers) || !hotkey.key_matches(vk_code) {
+        return HotkeyMatchResult::NoMatch;
+    }
+
+    if !hotkey.is_multi_press() {
+        // Single-press hotkey — trigger immediately
+        return HotkeyMatchResult::Triggered;
+    }
+
+    // Multi-press hotkey (e.g. ctrl+c+c)
+    let now = Instant::now();
+    let mut press_state = state.lock().expect("press state mutex poisoned");
+
+    let is_within_window = press_state
         .last_press
         .is_some_and(|last| now.duration_since(last) <= DOUBLE_C_WINDOW);
 
-    if is_double_press {
-        let backup = state.clipboard_backup.take();
-        state.last_press = None;
-        drop(state);
-
-        trigger_translate_from_existing_copy(backup);
-        true
+    if is_within_window {
+        press_state.press_count += 1;
     } else {
-        state.last_press = Some(now);
-        state.clipboard_backup = current_clipboard_text();
-        false
+        press_state.press_count = 1;
+        press_state.clipboard_backup = current_clipboard_text();
     }
+    press_state.last_press = Some(now);
+
+    if press_state.press_count >= hotkey.repeat_count {
+        let backup = press_state.clipboard_backup.take();
+        press_state.press_count = 0;
+        press_state.last_press = None;
+        drop(press_state);
+
+        // For multi-press, we already have a copy in clipboard from the first press
+        // Trigger translation from existing clipboard content
+        trigger_translate_from_existing_copy(backup);
+        return HotkeyMatchResult::Triggered;
+    }
+
+    HotkeyMatchResult::Accumulating
+}
+
+fn reset_state_if_needed(vk_code: u32, modifiers: ModifierState, config: &RuntimeConfig) {
+    // If the translate hotkey is multi-press and the user presses something
+    // that doesn't match while not holding the required modifiers, reset.
+    if config.hotkey_translate.is_multi_press() {
+        let should_reset = !config.hotkey_translate.modifiers_match(modifiers)
+            || (!config.hotkey_translate.key_matches(vk_code)
+                && !is_modifier_vk(vk_code));
+        if should_reset {
+            if let Ok(mut state) = translate_press_state().lock() {
+                state.press_count = 0;
+                state.last_press = None;
+            }
+        }
+    }
+    if config.hotkey_reverse.is_multi_press() {
+        let should_reset = !config.hotkey_reverse.modifiers_match(modifiers)
+            || (!config.hotkey_reverse.key_matches(vk_code)
+                && !is_modifier_vk(vk_code));
+        if should_reset {
+            if let Ok(mut state) = reverse_press_state().lock() {
+                state.press_count = 0;
+                state.last_press = None;
+            }
+        }
+    }
+}
+
+fn is_modifier_vk(vk_code: u32) -> bool {
+    matches!(
+        vk_code,
+        0x10 | 0x11 | 0x12 |       // VK_SHIFT, VK_CONTROL, VK_MENU
+        0xA0 | 0xA1 |               // VK_LSHIFT, VK_RSHIFT
+        0xA2 | 0xA3 |               // VK_LCONTROL, VK_RCONTROL
+        0xA4 | 0xA5 |               // VK_LMENU, VK_RMENU
+        0x5B | 0x5C                  // VK_LWIN, VK_RWIN
+    )
+}
+
+/// Trigger translate: for single-press hotkeys, we need to copy text first.
+fn trigger_translate(config: RuntimeConfig) {
+    if config.hotkey_translate.is_multi_press() {
+        // Multi-press already handled via trigger_translate_from_existing_copy
+        return;
+    }
+    // Single-press hotkey: copy selection, then translate
+    let clipboard_backup = current_clipboard_text();
+    thread::spawn(move || {
+        send_ctrl_c();
+        thread::sleep(CLIPBOARD_SETTLE_DELAY);
+
+        let Some(text) = current_clipboard_text().filter(|text| !text.trim().is_empty()) else {
+            restore_clipboard_text(clipboard_backup);
+            return;
+        };
+
+        restore_clipboard_text(clipboard_backup);
+        run_translation_flow(text, config, false);
+    });
 }
 
 fn trigger_translate_from_existing_copy(clipboard_backup: Option<String>) {
@@ -503,12 +718,31 @@ fn cursor_position() -> Option<PhysicalPosition<i32>> {
 }
 
 fn send_ctrl_c() {
-    let inputs = [
-        vk_input(VK_CONTROL, false),
-        vk_input(VIRTUAL_KEY(C_KEY as u16), false),
-        vk_input(VIRTUAL_KEY(C_KEY as u16), true),
-        vk_input(VK_CONTROL, true),
+    let modifiers = ModifierState::current();
+    let held: [(bool, VIRTUAL_KEY); 3] = [
+        (modifiers.shift, VK_SHIFT),
+        (modifiers.alt, VK_MENU),
+        (modifiers.win, VK_LWIN),
     ];
+
+    let mut inputs: Vec<INPUT> = Vec::new();
+
+    for &(active, vkey) in &held {
+        if active { inputs.push(keys::vk(vkey, true)); }
+    }
+    if !modifiers.ctrl {
+        inputs.push(keys::vk(VK_CONTROL, false));
+    }
+
+    inputs.push(keys::vk(VIRTUAL_KEY(C_KEY as u16), false));
+    inputs.push(keys::vk(VIRTUAL_KEY(C_KEY as u16), true));
+
+    if !modifiers.ctrl {
+        inputs.push(keys::vk(VK_CONTROL, true));
+    }
+    for &(active, vkey) in &held {
+        if active { inputs.push(keys::vk(vkey, false)); }
+    }
 
     unsafe {
         let _ = SendInput(&inputs, size_of::<INPUT>() as i32);
@@ -517,33 +751,14 @@ fn send_ctrl_c() {
 
 fn send_ctrl_v() {
     let inputs = [
-        vk_input(VK_CONTROL, false),
-        vk_input(VIRTUAL_KEY(V_KEY as u16), false),
-        vk_input(VIRTUAL_KEY(V_KEY as u16), true),
-        vk_input(VK_CONTROL, true),
+        keys::vk(VK_CONTROL, false),
+        keys::vk(VIRTUAL_KEY(V_KEY as u16), false),
+        keys::vk(VIRTUAL_KEY(V_KEY as u16), true),
+        keys::vk(VK_CONTROL, true),
     ];
 
     unsafe {
         let _ = SendInput(&inputs, size_of::<INPUT>() as i32);
-    }
-}
-
-fn vk_input(vk: VIRTUAL_KEY, key_up: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: vk,
-                wScan: 0,
-                dwFlags: if key_up {
-                    KEYEVENTF_KEYUP
-                } else {
-                    Default::default()
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
     }
 }
 
@@ -582,13 +797,6 @@ fn normalize_target_language(target_language: &str) -> String {
     }
 }
 
-fn reset_ctrl_c_state() {
-    if let Ok(mut state) = ctrl_c_state().lock() {
-        state.last_press = None;
-        state.clipboard_backup = None;
-    }
-}
-
 fn current_config() -> RuntimeConfig {
     config_store()
         .lock()
@@ -600,8 +808,12 @@ fn config_store() -> &'static Mutex<RuntimeConfig> {
     CONFIG.get_or_init(|| Mutex::new(RuntimeConfig::default()))
 }
 
-fn ctrl_c_state() -> &'static Mutex<CtrlCState> {
-    CTRL_C_STATE.get_or_init(|| Mutex::new(CtrlCState::default()))
+fn translate_press_state() -> &'static Mutex<MultiPressState> {
+    TRANSLATE_PRESS_STATE.get_or_init(|| Mutex::new(MultiPressState::default()))
+}
+
+fn reverse_press_state() -> &'static Mutex<MultiPressState> {
+    REVERSE_PRESS_STATE.get_or_init(|| Mutex::new(MultiPressState::default()))
 }
 
 #[cfg(test)]
@@ -652,5 +864,86 @@ mod tests {
             test_translate_api("http://127.0.0.1:5000", "", "de"),
             Err("целевой язык должен быть 'ru' или 'en'".to_string())
         );
+    }
+
+    #[test]
+    fn parsed_hotkey_simple_combo() {
+        let hk = ParsedHotkey::parse("ctrl+alt+r").unwrap();
+        assert!(hk.ctrl);
+        assert!(!hk.shift);
+        assert!(hk.alt);
+        assert!(!hk.win);
+        assert_eq!(hk.vk_code, 0x52); // 'R'
+        assert_eq!(hk.repeat_count, 1);
+        assert!(!hk.is_multi_press());
+    }
+
+    #[test]
+    fn parsed_hotkey_shift_alt() {
+        let hk = ParsedHotkey::parse("shift+alt+r").unwrap();
+        assert!(!hk.ctrl);
+        assert!(hk.shift);
+        assert!(hk.alt);
+        assert!(!hk.win);
+        assert_eq!(hk.vk_code, 0x52); // 'R'
+        assert_eq!(hk.repeat_count, 1);
+    }
+
+    #[test]
+    fn parsed_hotkey_multi_press() {
+        let hk = ParsedHotkey::parse("ctrl+c+c").unwrap();
+        assert!(hk.ctrl);
+        assert!(!hk.shift);
+        assert!(!hk.alt);
+        assert!(!hk.win);
+        assert_eq!(hk.vk_code, 0x43); // 'C'
+        assert_eq!(hk.repeat_count, 2);
+        assert!(hk.is_multi_press());
+    }
+
+    #[test]
+    fn parsed_hotkey_ctrl_shift_c() {
+        let hk = ParsedHotkey::parse("ctrl+shift+c").unwrap();
+        assert!(hk.ctrl);
+        assert!(hk.shift);
+        assert!(!hk.alt);
+        assert!(!hk.win);
+        assert_eq!(hk.vk_code, 0x43); // 'C'
+        assert_eq!(hk.repeat_count, 1);
+    }
+
+    #[test]
+    fn parsed_hotkey_function_key() {
+        let hk = ParsedHotkey::parse("ctrl+f5").unwrap();
+        assert!(hk.ctrl);
+        assert_eq!(hk.vk_code, 0x74); // VK_F5 = 0x6F + 5
+        assert_eq!(hk.repeat_count, 1);
+    }
+
+    #[test]
+    fn parsed_hotkey_modifiers_match() {
+        let hk = ParsedHotkey::parse("ctrl+alt+r").unwrap();
+        let modifiers = ModifierState {
+            ctrl: true,
+            shift: false,
+            alt: true,
+            win: false,
+        };
+        assert!(hk.modifiers_match(modifiers));
+        assert!(hk.key_matches(0x52));
+
+        let wrong_modifiers = ModifierState {
+            ctrl: true,
+            shift: true,
+            alt: true,
+            win: false,
+        };
+        assert!(!hk.modifiers_match(wrong_modifiers));
+    }
+
+    #[test]
+    fn parsed_hotkey_invalid_input() {
+        assert!(ParsedHotkey::parse("").is_none());
+        assert!(ParsedHotkey::parse("ctrl+a+b").is_none()); // two different non-modifier keys
     }
 }

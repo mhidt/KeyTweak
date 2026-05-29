@@ -1,13 +1,13 @@
-use crate::config::KeyRemapConfig;
+use crate::{config::KeyRemapConfig, keys};
 use std::{
     mem::size_of,
     sync::{Mutex, OnceLock},
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP,
-    VIRTUAL_KEY, VK_BACK, VK_CAPITAL, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME,
-    VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR,
-    VK_RCONTROL, VK_RIGHT, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
+    VIRTUAL_KEY, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_INSERT, VK_LCONTROL,
+    VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_NEXT, VK_PRIOR, VK_RCONTROL, VK_RIGHT,
+    VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT, VK_UP,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -95,57 +95,13 @@ pub fn handle_key_event(vk_code: u32, is_keyup: bool) -> bool {
 
 impl RemapKey {
     fn from_id(value: &str) -> Option<Self> {
-        let vk = match value.trim().to_ascii_lowercase().as_str() {
-            "alt" => return Some(Self::AnyAlt),
-            "ctrl" | "control" => return Some(Self::AnyCtrl),
-            "shift" => return Some(Self::AnyShift),
-            "win" => return Some(Self::AnyWin),
-            "backspace" => VK_BACK,
-            "caps_lock" | "capslock" => VK_CAPITAL,
-            "delete" | "del" => VK_DELETE,
-            "down" | "arrowdown" => VK_DOWN,
-            "end" => VK_END,
-            "enter" | "return" => VIRTUAL_KEY(0x0D),
-            "esc" | "escape" => VK_ESCAPE,
-            "home" => VK_HOME,
-            "insert" | "ins" => VK_INSERT,
-            "left" | "arrowleft" => VK_LEFT,
-            "left_alt" => VK_LMENU,
-            "left_ctrl" | "left_control" => VK_LCONTROL,
-            "left_shift" => VK_LSHIFT,
-            "left_win" => VK_LWIN,
-            "page_down" | "pagedown" => VK_NEXT,
-            "page_up" | "pageup" => VK_PRIOR,
-            "right" | "arrowright" => VK_RIGHT,
-            "right_alt" => VK_RMENU,
-            "right_ctrl" | "right_control" => VK_RCONTROL,
-            "right_shift" => VK_RSHIFT,
-            "right_win" => VK_RWIN,
-            "space" => VK_SPACE,
-            "tab" => VK_TAB,
-            "up" | "arrowup" => VK_UP,
-            value if value.len() == 1 => {
-                let byte = value.as_bytes()[0];
-                if byte.is_ascii_alphabetic() {
-                    VIRTUAL_KEY(byte.to_ascii_uppercase() as u16)
-                } else if byte.is_ascii_digit() {
-                    VIRTUAL_KEY(byte as u16)
-                } else {
-                    return None;
-                }
-            }
-            value if value.starts_with('f') => {
-                let number = value[1..].parse::<u16>().ok()?;
-                if (1..=24).contains(&number) {
-                    VIRTUAL_KEY(0x6F + number)
-                } else {
-                    return None;
-                }
-            }
-            _ => return None,
-        };
-
-        Some(Self::Vk(vk))
+        match value.trim().to_ascii_lowercase().as_str() {
+            "alt" => Some(Self::AnyAlt),
+            "ctrl" | "control" => Some(Self::AnyCtrl),
+            "shift" => Some(Self::AnyShift),
+            "win" => Some(Self::AnyWin),
+            name => keys::key_name_to_vk(name).map(Self::Vk),
+        }
     }
 
     fn matches_vk(self, vk_code: u32) -> bool {

@@ -8,6 +8,7 @@ mod commands;
 mod config;
 mod key_remap;
 mod keyboard_hook;
+mod keys;
 mod libretranslate_server;
 mod state;
 mod translate;
