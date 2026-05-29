@@ -192,16 +192,27 @@ fn activate_layout(layout: usize) -> Result<(), CapsLockError> {
         .map_err(|_| CapsLockError::Activate)?;
 
     let foreground = unsafe { GetForegroundWindow() };
+    let lparam = windows::Win32::Foundation::LPARAM(layout as isize);
+    let wparam = windows::Win32::Foundation::WPARAM(0);
+
     if !foreground.is_invalid() {
         let _ = unsafe {
-            PostMessageW(
-                foreground,
-                WM_INPUTLANGCHANGEREQUEST,
-                windows::Win32::Foundation::WPARAM(0),
-                windows::Win32::Foundation::LPARAM(layout as isize),
-            )
+            PostMessageW(foreground, WM_INPUTLANGCHANGEREQUEST, wparam, lparam)
         };
     }
+
+    // Broadcast to all top-level windows so the layout switches system-wide,
+    // even when no input-capable window is in the foreground (e.g. desktop).
+    use windows::Win32::Foundation::HWND;
+    let hwnd_broadcast = HWND(0xFFFF as *mut c_void);
+    let _ = unsafe {
+        PostMessageW(
+            hwnd_broadcast,
+            WM_INPUTLANGCHANGEREQUEST,
+            wparam,
+            lparam,
+        )
+    };
 
     Ok(())
 }
