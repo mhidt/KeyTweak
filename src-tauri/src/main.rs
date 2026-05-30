@@ -4,6 +4,7 @@ mod autoreplace;
 #[allow(dead_code)]
 mod autostart;
 mod capslock;
+mod clipboard;
 mod commands;
 mod config;
 mod exclusions;

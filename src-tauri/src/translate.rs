@@ -15,7 +15,6 @@ use windows::Win32::{
 };
 
 const C_KEY: u32 = 0x43;
-const V_KEY: u32 = 0x56;
 const DOUBLE_C_WINDOW: Duration = Duration::from_millis(500);
 const CLIPBOARD_SETTLE_DELAY: Duration = Duration::from_millis(120);
 
@@ -283,7 +282,7 @@ fn check_hotkey(
         press_state.press_count += 1;
     } else {
         press_state.press_count = 1;
-        press_state.clipboard_backup = current_clipboard_text();
+        press_state.clipboard_backup = crate::clipboard::current_text();
     }
     press_state.last_press = Some(now);
 
@@ -347,17 +346,17 @@ fn trigger_translate(config: RuntimeConfig) {
         return;
     }
     // Single-press hotkey: copy selection, then translate
-    let clipboard_backup = current_clipboard_text();
+    let clipboard_backup = crate::clipboard::current_text();
     thread::spawn(move || {
         send_ctrl_c();
         thread::sleep(CLIPBOARD_SETTLE_DELAY);
 
-        let Some(text) = current_clipboard_text().filter(|text| !text.trim().is_empty()) else {
-            restore_clipboard_text(clipboard_backup);
+        let Some(text) = crate::clipboard::current_text().filter(|text| !text.trim().is_empty()) else {
+            crate::clipboard::restore_text(clipboard_backup);
             return;
         };
 
-        restore_clipboard_text(clipboard_backup);
+        crate::clipboard::restore_text(clipboard_backup);
         run_translation_flow(text, config, false);
     });
 }
@@ -366,29 +365,29 @@ fn trigger_translate_from_existing_copy(clipboard_backup: Option<String>) {
     let config = current_config();
     thread::spawn(move || {
         thread::sleep(CLIPBOARD_SETTLE_DELAY);
-        let Some(text) = current_clipboard_text().filter(|text| !text.trim().is_empty()) else {
-            restore_clipboard_text(clipboard_backup);
+        let Some(text) = crate::clipboard::current_text().filter(|text| !text.trim().is_empty()) else {
+            crate::clipboard::restore_text(clipboard_backup);
             return;
         };
 
-        restore_clipboard_text(clipboard_backup);
+        crate::clipboard::restore_text(clipboard_backup);
         run_translation_flow(text, config, false);
     });
 }
 
 fn trigger_reverse_translate(config: RuntimeConfig) {
-    let clipboard_backup = current_clipboard_text();
+    let clipboard_backup = crate::clipboard::current_text();
 
     thread::spawn(move || {
         send_ctrl_c();
         thread::sleep(CLIPBOARD_SETTLE_DELAY);
 
-        let Some(text) = current_clipboard_text().filter(|text| !text.trim().is_empty()) else {
-            restore_clipboard_text(clipboard_backup);
+        let Some(text) = crate::clipboard::current_text().filter(|text| !text.trim().is_empty()) else {
+            crate::clipboard::restore_text(clipboard_backup);
             return;
         };
 
-        restore_clipboard_text(clipboard_backup);
+        crate::clipboard::restore_text(clipboard_backup);
         run_translation_flow(text, config, true);
     });
 }
@@ -508,23 +507,19 @@ pub fn replace_with_translation(text: String) -> Result<(), String> {
     hide_translation_toast();
 
     thread::spawn(move || {
-        let backup = current_clipboard_text();
+        let backup = crate::clipboard::current_text();
 
-        if let Ok(mut clipboard) = Clipboard::new() {
-            if clipboard.set_text(&text).is_err() {
-                return;
-            }
-        } else {
+        if !crate::clipboard::set_text(&text) {
             return;
         }
 
         // Give the clipboard and the OS a moment to settle and refocus.
         thread::sleep(CLIPBOARD_SETTLE_DELAY);
-        send_ctrl_v();
+        crate::clipboard::send_ctrl_v();
 
         // Wait for the target app to consume the paste before restoring the clipboard.
         thread::sleep(Duration::from_millis(200));
-        restore_clipboard_text(backup);
+        crate::clipboard::restore_text(backup);
     });
 
     Ok(())
@@ -569,29 +564,6 @@ fn send_ctrl_c() {
     }
 
     keys::send_inputs(&inputs);
-}
-
-fn send_ctrl_v() {
-    let inputs = [
-        press(VK_CONTROL, false),
-        press_code(V_KEY, false),
-        press_code(V_KEY, true),
-        press(VK_CONTROL, true),
-    ];
-
-    keys::send_inputs(&inputs);
-}
-
-fn current_clipboard_text() -> Option<String> {
-    Clipboard::new().ok()?.get_text().ok()
-}
-
-fn restore_clipboard_text(text: Option<String>) {
-    if let Some(text) = text {
-        if let Ok(mut clipboard) = Clipboard::new() {
-            let _ = clipboard.set_text(text);
-        }
-    }
 }
 
 fn reverse_target_language(target_language: &str) -> String {

@@ -294,8 +294,9 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="replacement">Замена</Label>
-            <Input
+            <textarea
               id="replacement"
+              rows={4}
               value={editor?.replacement ?? ""}
               onChange={(event) =>
                 setEditor(
@@ -303,7 +304,12 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
                     current && { ...current, replacement: event.target.value },
                 )
               }
+              className="min-h-[80px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
+            <p className="text-xs text-muted-foreground">
+              Можно вводить несколько строк. Многострочный текст вставляется
+              через буфер обмена.
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Исключения (не работает в этих программах)</Label>

@@ -1,18 +1,26 @@
 use crate::{
+    clipboard,
     config::{AutoReplaceConfig, Replacement},
     config::ModuleId,
     exclusions,
     keyboard_hook::ModifierState,
     keys::{self, press, unicode},
 };
-use std::sync::{Mutex, OnceLock};
+use std::{
+    sync::{Mutex, OnceLock},
+    thread,
+    time::Duration,
+};
 use windows::Win32::UI::{
     Input::KeyboardAndMouse::{
         GetKeyboardState, ToUnicodeEx, VK_BACK, VK_DELETE, VK_DOWN, VK_END,
-        VK_ESCAPE, VK_HOME, VK_LEFT, VK_RETURN, VK_RIGHT, VK_SPACE, VK_TAB, VK_UP,
+        VK_ESCAPE, VK_HOME, VK_LEFT, VK_RETURN, VK_RIGHT, VK_SHIFT, VK_SPACE, VK_TAB, VK_UP,
     },
     WindowsAndMessaging::GetForegroundWindow,
 };
+
+const CLIPBOARD_SETTLE_DELAY: Duration = Duration::from_millis(120);
+const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(200);
 
 const MAX_BUFFER_CHARS: usize = 128;
 const PUNCTUATION_TRIGGERS: &[char] = &['.', ',', '?', '!', ';', ':'];
@@ -122,9 +130,6 @@ fn handle_separator(separator: char, config: &RuntimeConfig, process_name: Optio
     };
 
     if word.is_empty() {
-        // No word collected yet, but a punctuation trigger may itself start
-        // a new shortcut (e.g. ":bug"). Whitespace separators don't belong
-        // inside a shortcut and are skipped.
         if PUNCTUATION_TRIGGERS.contains(&separator) {
             push_to_buffer(separator);
         }
@@ -138,15 +143,11 @@ fn handle_separator(separator: char, config: &RuntimeConfig, process_name: Optio
         clear_buffer();
     } else {
         clear_buffer();
-        // No replacement matched: if the separator is punctuation it might
-        // be the first char of a new shortcut, so seed the buffer with it.
         if PUNCTUATION_TRIGGERS.contains(&separator) {
             push_to_buffer(separator);
         }
     }
 
-    // Always let the separator key pass through to the OS so the trigger
-    // character (space, tab, punctuation) is preserved in the output.
     false
 }
 
@@ -192,8 +193,6 @@ fn find_replacement(config: &RuntimeConfig, word: &str, process_name: Option<&st
     })
 }
 
-/// Returns `true` if this replacement is blacklisted for the current foreground
-/// program (per-replacement exclusion list).
 fn is_replacement_excluded(entry: &Replacement, process_name: Option<&str>) -> bool {
     if entry.exclusions.is_empty() {
         return false;
@@ -237,20 +236,71 @@ fn key_to_char(vk_code: u32, scan_code: u32) -> Option<char> {
         .filter(|ch| !ch.is_control())
 }
 
-fn replace_word(word: &str, replacement: &str) -> bool {
-    let mut inputs = Vec::new();
+fn needs_clipboard_paste(replacement: &str) -> bool {
+    replacement.contains('\n')
+}
 
-    for _ in word.chars() {
-        inputs.push(press(VK_BACK, false));
-        inputs.push(press(VK_BACK, true));
+fn replace_word(word: &str, replacement: &str) -> bool {
+    let char_count = word.chars().count();
+
+    if !select_previous_chars(char_count) {
+        return false;
     }
 
-    for unit in replacement.encode_utf16() {
+    if needs_clipboard_paste(replacement) {
+        paste_via_clipboard(replacement);
+        return true;
+    }
+
+    type_unicode(replacement)
+}
+
+fn select_previous_chars(count: usize) -> bool {
+    if count == 0 {
+        return true;
+    }
+
+    let mut inputs = Vec::with_capacity(count * 4 + 2);
+    inputs.push(press(VK_SHIFT, false));
+    for _ in 0..count {
+        inputs.push(press(VK_LEFT, false));
+        inputs.push(press(VK_LEFT, true));
+    }
+    inputs.push(press(VK_SHIFT, true));
+
+    keys::send_inputs(&inputs) == inputs.len() as u32
+}
+
+fn type_unicode(text: &str) -> bool {
+    let mut inputs = Vec::new();
+    for unit in text.encode_utf16() {
         inputs.push(unicode(unit, false));
         inputs.push(unicode(unit, true));
     }
 
+    if inputs.is_empty() {
+        return true;
+    }
+
     keys::send_inputs(&inputs) == inputs.len() as u32
+}
+
+fn paste_via_clipboard(text: &str) {
+    let text = text.replace("\r\n", "\n");
+
+    thread::spawn(move || {
+        let backup = clipboard::current_text();
+
+        if !clipboard::set_text(&text) {
+            return;
+        }
+
+        thread::sleep(CLIPBOARD_SETTLE_DELAY);
+        clipboard::send_ctrl_v();
+
+        thread::sleep(CLIPBOARD_RESTORE_DELAY);
+        clipboard::restore_text(backup);
+    });
 }
 
 fn should_clear_buffer(vk_code: u32) -> bool {
@@ -342,19 +392,15 @@ mod tests {
             display_name: None,
         }];
 
-        // Excluded program: no replacement.
         assert_eq!(find_replacement(&config, "почта", Some("code.exe")), None);
-        // Excluded program given as full path still matches by file name.
         assert_eq!(
             find_replacement(&config, "почта", Some("code.exe")),
             find_replacement(&config, "почта", Some("code.exe"))
         );
-        // Different program: replacement still works.
         assert_eq!(
             find_replacement(&config, "почта", Some("notepad.exe")),
             Some("myemail@gmail.com".to_string())
         );
-        // Unknown foreground program: replacement works.
         assert_eq!(
             find_replacement(&config, "почта", None),
             Some("myemail@gmail.com".to_string())
@@ -371,5 +417,13 @@ mod tests {
         assert_eq!(separator_for_vk(VK_SPACE.0 as u32, &config), Some(' '));
         assert_eq!(separator_for_vk(VK_TAB.0 as u32, &config), None);
         assert_eq!(separator_for_vk(VK_RETURN.0 as u32, &config), None);
+    }
+
+    #[test]
+    fn multiline_replacement_uses_clipboard() {
+        assert!(needs_clipboard_paste("line one\nline two"));
+        assert!(needs_clipboard_paste("trailing\n"));
+        assert!(!needs_clipboard_paste("single line"));
+        assert!(!needs_clipboard_paste(""));
     }
 }
