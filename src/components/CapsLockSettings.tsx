@@ -1,5 +1,10 @@
 import { useState } from "react";
-import type { Config, RealCapsCombo, SwitchMode } from "../types/config";
+import type {
+  Config,
+  RealCapsCombo,
+  SwitchMethod,
+  SwitchMode,
+} from "../types/config";
 import { capturedKeyId, normalizeKeyInput } from "../lib/keys";
 import { KeyCaptureInput } from "./KeyCaptureInput";
 import { Label } from "./ui/label";
@@ -54,32 +59,49 @@ export function CapsLockSettings({ config, onChange }: Props) {
           onCaptureKeyDown={handleCaptureKeyDown}
           activeTitle="Нажмите клавишу"
           inactiveTitle="Считать клавишу с клавиатуры"
-          wrapperClassName="max-w-[150px]"
+          wrapperClassName="w-[220px]"
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Режим переключения</Label>
-        <div className="flex gap-2">
-          {[
-            ["previous", "Предыдущий"],
-            ["default", "По умолчанию"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={
-                config.caps_lock.switch_mode === value
-                  ? "h-9 rounded-md bg-primary px-4 text-sm text-primary-foreground"
-                  : "h-9 rounded-md border border-border px-4 text-sm hover:bg-muted"
-              }
-              onClick={() => updateCaps({ switch_mode: value as SwitchMode })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Label htmlFor="switch-method">Способ переключения</Label>
+        <Select
+          id="switch-method"
+          value={config.caps_lock.switch_method}
+          onChange={(event) =>
+            updateCaps({ switch_method: event.target.value as SwitchMethod })
+          }
+          className="w-[400px]"
+        >
+          <option value="hotkey">Эмуляция Shift + Alt (рекомендуется)</option>
+          <option value="programmatic">Программная установка (для нескольких раскладок)</option>
+        </Select>
       </div>
+
+      {config.caps_lock.switch_method === "programmatic" ? (
+        <div className="space-y-2">
+          <Label>Режим переключения</Label>
+          <div className="flex gap-2">
+            {[
+              ["previous", "Предыдущий"],
+              ["default", "По умолчанию"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={
+                  config.caps_lock.switch_mode === value
+                    ? "h-9 rounded-md bg-primary px-4 text-sm text-primary-foreground"
+                    : "h-9 rounded-md border border-border px-4 text-sm hover:bg-muted"
+                }
+                onClick={() => updateCaps({ switch_mode: value as SwitchMode })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {isCapsLock ? (
         <div className="space-y-2">
@@ -94,7 +116,7 @@ export function CapsLockSettings({ config, onChange }: Props) {
                 real_caps_combo: event.target.value as RealCapsCombo,
               })
             }
-            className="min-w-[220px]"
+            className="w-[220px]"
           >
             <option value="shift_caps">Shift + Caps Lock</option>
             <option value="alt_caps">Alt + Caps Lock</option>

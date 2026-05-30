@@ -244,6 +244,11 @@ pub fn is_auto_start() -> CommandResult<bool> {
 }
 
 #[tauri::command]
+pub fn set_run_as_admin(enabled: bool) -> CommandResult<()> {
+    autostart::set_run_as_admin(enabled).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn test_translate_api(
     server_url: String,
     api_key: String,

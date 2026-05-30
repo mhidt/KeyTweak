@@ -44,6 +44,11 @@ fn main() {
                     log::error!("failed to repair Windows startup entry: {error}");
                 }
             }
+            if let Err(error) =
+                autostart::set_run_as_admin(state.config().general.run_as_admin)
+            {
+                log::error!("failed to apply run-as-admin setting: {error}");
+            }
             state.start_libretranslate_server();
             tray::setup_tray(&app.handle())?;
             toast::show_startup_toast();
@@ -65,6 +70,7 @@ fn main() {
             commands::is_caps_paused,
             commands::set_auto_start,
             commands::is_auto_start,
+            commands::set_run_as_admin,
             commands::test_translate_api,
             commands::replace_with_translation,
             commands::copy_to_clipboard,

@@ -1,5 +1,5 @@
 use crate::{
-    config::{CapsLockConfig, ModuleId, RealCapsCombo, SwitchMode},
+    config::{CapsLockConfig, ModuleId, RealCapsCombo, SwitchMethod, SwitchMode},
     exclusions,
     keyboard_hook::ModifierState,
     keys,
@@ -11,15 +11,15 @@ use std::{
 use thiserror::Error;
 use windows::Win32::{
     UI::Input::KeyboardAndMouse::{
-        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER, VK_CAPITAL,
+        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER, VK_CAPITAL, VK_LMENU,
+        VK_LSHIFT,
     },
-    UI::WindowsAndMessaging::{
-        GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
-    },
+    UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST},
 };
 
 #[derive(Debug, Clone, Copy)]
 struct RuntimeSettings {
+    switch_method: SwitchMethod,
     switch_mode: SwitchMode,
     real_caps_combo: RealCapsCombo,
     /// Virtual-key code of the configured trigger key. `None` if the configured
@@ -33,6 +33,7 @@ impl Default for RuntimeSettings {
         let config = CapsLockConfig::default();
 
         Self {
+            switch_method: config.switch_method,
             switch_mode: config.switch_mode,
             real_caps_combo: config.real_caps_combo,
             switch_key_vk: resolve_switch_key(&config.switch_key),
@@ -64,6 +65,7 @@ static LAYOUT_STATE: OnceLock<Mutex<LayoutState>> = OnceLock::new();
 pub fn configure(config: &CapsLockConfig) {
     let mut settings = settings().lock().expect("capslock settings mutex poisoned");
     *settings = RuntimeSettings {
+        switch_method: config.switch_method,
         switch_mode: config.switch_mode,
         real_caps_combo: config.real_caps_combo,
         switch_key_vk: resolve_switch_key(&config.switch_key),
@@ -109,11 +111,39 @@ pub fn handle_caps_lock_keydown(modifiers: ModifierState, process_name: Option<&
         return false;
     }
 
-    if let Err(error) = switch_layout(settings.switch_mode) {
-        log::error!("failed to switch keyboard layout: {error}");
+    match settings.switch_method {
+        SwitchMethod::Hotkey => send_layout_switch_hotkey(),
+        SwitchMethod::Programmatic => {
+            if let Err(error) = switch_layout(settings.switch_mode) {
+                log::error!("failed to switch keyboard layout: {error}");
+            }
+        }
     }
 
     true
+}
+
+/// Sends the system layout-switch hotkey (Left Shift + Left Alt) via SendInput.
+/// Order matters: Windows only recognizes it when Alt is released before Shift.
+/// Injected events carry LLKHF_INJECTED, so our own hook ignores them.
+fn send_layout_switch_hotkey() {
+    let inputs = [
+        keys::press(VK_LSHIFT, false), // Shift down
+        keys::press(VK_LMENU, false),  // Alt   down
+        keys::press(VK_LMENU, true),   // Alt   up
+        keys::press(VK_LSHIFT, true),  // Shift up
+    ];
+
+    let sent = keys::send_inputs(&inputs);
+    if sent != inputs.len() as u32 {
+        log::warn!(
+            "layout-switch hotkey: SendInput sent only {}/{} events",
+            sent,
+            inputs.len()
+        );
+    } else {
+        log::debug!("layout-switch hotkey: SendInput sent {}/{} events", sent, inputs.len());
+    }
 }
 
 fn is_real_caps_combo(combo: RealCapsCombo, modifiers: ModifierState) -> bool {
@@ -218,23 +248,14 @@ fn activate_layout(layout: usize) -> Result<(), CapsLockError> {
     let wparam = windows::Win32::Foundation::WPARAM(0);
 
     if !foreground.is_invalid() {
-        let _ = unsafe {
-            PostMessageW(foreground, WM_INPUTLANGCHANGEREQUEST, wparam, lparam)
-        };
+        let _ = unsafe { PostMessageW(foreground, WM_INPUTLANGCHANGEREQUEST, wparam, lparam) };
     }
 
     // Broadcast to all top-level windows so the layout switches system-wide,
     // even when no input-capable window is in the foreground (e.g. desktop).
     use windows::Win32::Foundation::HWND;
     let hwnd_broadcast = HWND(0xFFFF as *mut c_void);
-    let _ = unsafe {
-        PostMessageW(
-            hwnd_broadcast,
-            WM_INPUTLANGCHANGEREQUEST,
-            wparam,
-            lparam,
-        )
-    };
+    let _ = unsafe { PostMessageW(hwnd_broadcast, WM_INPUTLANGCHANGEREQUEST, wparam, lparam) };
 
     Ok(())
 }

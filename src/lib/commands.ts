@@ -9,6 +9,7 @@ declare global {
 
 const defaultConfig: Config = {
   caps_lock: {
+    switch_method: "hotkey",
     switch_mode: "previous",
     switch_key: "capslock",
     real_caps_combo: "shift_caps",
@@ -39,6 +40,7 @@ const defaultConfig: Config = {
   general: {
     app_language: "en",
     theme: "system",
+    run_as_admin: false,
   },
   exception_mode: "blacklist",
   exceptions: [],
@@ -95,6 +97,11 @@ export function setAutoStart(enabled: boolean) {
 export function isAutoStart() {
   if (!inTauri()) return Promise.resolve(defaultConfig.caps_lock.auto_start);
   return invoke<boolean>("is_auto_start");
+}
+
+export function setRunAsAdmin(enabled: boolean) {
+  if (!inTauri()) return Promise.resolve(void enabled);
+  return invoke<void>("set_run_as_admin", { enabled });
 }
 
 export function testTranslateApi(

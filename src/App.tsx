@@ -4,6 +4,7 @@ import {
   isAutoStart,
   setAutoStart,
   setConfig,
+  setRunAsAdmin,
 } from "./lib/commands";
 import type { Config } from "./types/config";
 import { AutoReplaceSettings } from "./components/AutoReplaceSettings";
@@ -91,6 +92,9 @@ export function App() {
       await setConfig(config);
       if (savedConfig?.caps_lock.auto_start !== config.caps_lock.auto_start) {
         await setAutoStart(config.caps_lock.auto_start);
+      }
+      if (savedConfig?.general.run_as_admin !== config.general.run_as_admin) {
+        await setRunAsAdmin(config.general.run_as_admin);
       }
       setSavedConfig(config);
       setStatus("Сохранено");

@@ -44,6 +44,8 @@ impl Default for Config {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapsLockConfig {
     #[serde(default)]
+    pub switch_method: SwitchMethod,
+    #[serde(default)]
     pub switch_mode: SwitchMode,
     #[serde(default = "default_switch_key")]
     pub switch_key: String,
@@ -58,6 +60,7 @@ pub struct CapsLockConfig {
 impl Default for CapsLockConfig {
     fn default() -> Self {
         Self {
+            switch_method: SwitchMethod::default(),
             switch_mode: SwitchMode::Previous,
             switch_key: default_switch_key(),
             real_caps_combo: RealCapsCombo::ShiftCaps,
@@ -69,6 +72,22 @@ impl Default for CapsLockConfig {
 
 fn default_switch_key() -> String {
     "capslock".to_string()
+}
+
+/// How the language switch is performed when the trigger key fires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwitchMethod {
+    /// Emulate the system layout-switch hotkey (Left Shift + Left Alt).
+    Hotkey,
+    /// Set the layout programmatically via the Windows keyboard-layout API.
+    Programmatic,
+}
+
+impl Default for SwitchMethod {
+    fn default() -> Self {
+        Self::Hotkey
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -243,6 +262,8 @@ pub struct GeneralConfig {
     pub app_language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default)]
+    pub run_as_admin: bool,
 }
 
 impl Default for GeneralConfig {
@@ -250,6 +271,7 @@ impl Default for GeneralConfig {
         Self {
             app_language: default_app_language(),
             theme: default_theme(),
+            run_as_admin: false,
         }
     }
 }
