@@ -1,6 +1,7 @@
 import { Download, Pencil, Plus, Trash2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Config, Replacement } from "../types/config";
+import { exportReplacementsJson, importReplacementsJson } from "../lib/commands";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog } from "./ui/dialog";
@@ -20,7 +21,6 @@ interface EditorState {
 }
 
 export function AutoReplaceSettings({ config, onChange }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const auto = config.auto_replace;
 
@@ -41,29 +41,23 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
   };
 
   const exportJson = () => {
-    const blob = new Blob([JSON.stringify(auto.replacements, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "keytweak-replacements.json";
-    link.click();
-    URL.revokeObjectURL(url);
+    const json = JSON.stringify(auto.replacements, null, 2);
+    exportReplacementsJson(json);
   };
 
-  const importJson = (file: File | undefined) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const parsed = JSON.parse(String(reader.result)) as Replacement[];
+  const importJson = async () => {
+    const content = await importReplacementsJson();
+    if (!content) return;
+    try {
+      const parsed = JSON.parse(content) as Replacement[];
       updateAuto({
         replacements: parsed.filter(
           (item) => item.short && typeof item.replacement === "string",
         ),
       });
-    };
-    reader.readAsText(file);
+    } catch {
+      // invalid JSON — ignore silently
+    }
   };
 
   return (
@@ -112,17 +106,10 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
       </div>
 
       <div className="flex gap-2">
-        <input
-          ref={inputRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={(event) => importJson(event.target.files?.[0])}
-        />
         <Button
           variant="outline"
           size="sm"
-          onClick={() => inputRef.current?.click()}
+          onClick={importJson}
         >
           <Download size={14} /> Импорт JSON
         </Button>

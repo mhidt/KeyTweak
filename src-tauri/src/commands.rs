@@ -1,6 +1,8 @@
 use crate::{autostart, config, config::Config, state::AppState, toast, translate, tray};
 use tauri::{AppHandle, State};
 
+use std::fs;
+
 type CommandResult<T> = Result<T, String>;
 
 #[tauri::command]
@@ -62,4 +64,35 @@ pub fn copy_to_clipboard(text: String) -> CommandResult<()> {
 #[tauri::command]
 pub fn hide_translation_toast() {
     toast::hide_translation_toast();
+}
+
+#[tauri::command]
+pub fn export_replacements_json(json: String) -> CommandResult<bool> {
+    let dialog = rfd::FileDialog::new()
+        .set_title("Экспорт замен")
+        .set_file_name("keytweak-replacements.json")
+        .add_filter("JSON", &["json"]);
+
+    match dialog.save_file() {
+        Some(path) => {
+            fs::write(&path, json.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+        None => Ok(false), // user cancelled
+    }
+}
+
+#[tauri::command]
+pub fn import_replacements_json() -> CommandResult<Option<String>> {
+    let dialog = rfd::FileDialog::new()
+        .set_title("Импорт замен")
+        .add_filter("JSON", &["json"]);
+
+    match dialog.pick_file() {
+        Some(path) => {
+            let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            Ok(Some(content))
+        }
+        None => Ok(None), // user cancelled
+    }
 }

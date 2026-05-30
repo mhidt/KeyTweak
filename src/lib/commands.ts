@@ -120,3 +120,13 @@ export function hideTranslationToast() {
   if (!inTauri()) return Promise.resolve();
   return invoke<void>("hide_translation_toast");
 }
+
+export function exportReplacementsJson(json: string) {
+  if (!inTauri()) return Promise.resolve(false);
+  return invoke<boolean>("export_replacements_json", { json });
+}
+
+export function importReplacementsJson() {
+  if (!inTauri()) return Promise.resolve(null as string | null);
+  return invoke<string | null>("import_replacements_json");
+}

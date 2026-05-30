@@ -67,6 +67,8 @@ fn main() {
             commands::replace_with_translation,
             commands::copy_to_clipboard,
             commands::hide_translation_toast,
+            commands::export_replacements_json,
+            commands::import_replacements_json,
         ])
         .build(tauri::generate_context!())
         .expect("error while building KeyTweak")
