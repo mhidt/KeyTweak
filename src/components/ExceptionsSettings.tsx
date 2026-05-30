@@ -9,7 +9,7 @@ import { Select } from "./ui/select";
 import { Table, Td, Th } from "./ui/table";
 
 const ALL_MODULES: { id: ModuleId; label: string }[] = [
-  { id: "caps_lock", label: "CapsLock" },
+  { id: "caps_lock", label: "Смена языка" },
   { id: "auto_replace", label: "Автозамена" },
   { id: "key_remap", label: "Клавиши" },
   { id: "translate", label: "Перевод" },

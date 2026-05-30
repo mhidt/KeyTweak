@@ -10,6 +10,7 @@ declare global {
 const defaultConfig: Config = {
   caps_lock: {
     switch_mode: "previous",
+    switch_key: "capslock",
     real_caps_combo: "shift_caps",
     auto_start: false,
     paused: false,

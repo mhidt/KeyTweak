@@ -6,7 +6,7 @@ use windows::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::{
         Input::KeyboardAndMouse::{
-            VIRTUAL_KEY, VK_CAPITAL, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+            VIRTUAL_KEY, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
             VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
         },
         WindowsAndMessaging::{
@@ -116,7 +116,7 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         if is_keydown && !is_injected {
             let modifiers = ModifierState::current();
 
-            if event.vkCode == VK_CAPITAL.0 as u32
+            if capslock::switch_key_vk() == Some(event.vkCode)
                 && capslock::handle_caps_lock_keydown(modifiers, process_name.as_deref())
             {
                 return LRESULT(1);

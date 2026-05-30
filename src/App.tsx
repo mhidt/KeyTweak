@@ -69,7 +69,7 @@ export function App() {
   const title = useMemo(() => {
     switch (activeTab) {
       case "caps":
-        return "Caps Lock";
+        return "Смена языка";
       case "autoreplace":
         return "Автозамена";
       case "keyremap":

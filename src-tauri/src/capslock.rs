@@ -11,7 +11,7 @@ use std::{
 use thiserror::Error;
 use windows::Win32::{
     UI::Input::KeyboardAndMouse::{
-        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER,
+        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER, VK_CAPITAL,
     },
     UI::WindowsAndMessaging::{
         GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST,
@@ -22,6 +22,9 @@ use windows::Win32::{
 struct RuntimeSettings {
     switch_mode: SwitchMode,
     real_caps_combo: RealCapsCombo,
+    /// Virtual-key code of the configured trigger key. `None` if the configured
+    /// key name could not be resolved (the language switch is then disabled).
+    switch_key_vk: Option<u32>,
     paused: bool,
 }
 
@@ -32,9 +35,14 @@ impl Default for RuntimeSettings {
         Self {
             switch_mode: config.switch_mode,
             real_caps_combo: config.real_caps_combo,
+            switch_key_vk: resolve_switch_key(&config.switch_key),
             paused: config.paused,
         }
     }
+}
+
+fn resolve_switch_key(name: &str) -> Option<u32> {
+    keys::key_name_to_vk(name).map(|vk| vk.0 as u32)
 }
 
 #[derive(Debug, Default)]
@@ -58,8 +66,18 @@ pub fn configure(config: &CapsLockConfig) {
     *settings = RuntimeSettings {
         switch_mode: config.switch_mode,
         real_caps_combo: config.real_caps_combo,
+        switch_key_vk: resolve_switch_key(&config.switch_key),
         paused: config.paused,
     };
+}
+
+/// Returns the virtual-key code of the configured language-switch trigger key,
+/// or `None` if the configured key name could not be resolved.
+pub fn switch_key_vk() -> Option<u32> {
+    settings()
+        .lock()
+        .expect("capslock settings mutex poisoned")
+        .switch_key_vk
 }
 
 pub fn set_paused(paused: bool) {
@@ -78,7 +96,12 @@ pub fn handle_caps_lock_keydown(modifiers: ModifierState, process_name: Option<&
         return false;
     }
 
-    if is_real_caps_combo(settings.real_caps_combo, modifiers) {
+    // The "real Caps Lock" modifier combo only makes sense when Caps Lock is the
+    // configured trigger key; for any other trigger it must not pass the key
+    // through as a Caps Lock.
+    if settings.switch_key_vk == Some(VK_CAPITAL.0 as u32)
+        && is_real_caps_combo(settings.real_caps_combo, modifiers)
+    {
         return false;
     }
 

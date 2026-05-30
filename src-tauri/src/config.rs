@@ -45,6 +45,8 @@ impl Default for Config {
 pub struct CapsLockConfig {
     #[serde(default)]
     pub switch_mode: SwitchMode,
+    #[serde(default = "default_switch_key")]
+    pub switch_key: String,
     #[serde(default)]
     pub real_caps_combo: RealCapsCombo,
     #[serde(default = "default_true")]
@@ -57,11 +59,16 @@ impl Default for CapsLockConfig {
     fn default() -> Self {
         Self {
             switch_mode: SwitchMode::Previous,
+            switch_key: default_switch_key(),
             real_caps_combo: RealCapsCombo::ShiftCaps,
             auto_start: true,
             paused: false,
         }
     }
+}
+
+fn default_switch_key() -> String {
+    "capslock".to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -17,7 +17,7 @@ export type TabId =
   | "general";
 
 const items = [
-  { id: "caps", label: "Caps Lock", icon: Keyboard, group: "Модули" },
+  { id: "caps", label: "Смена языка", icon: Keyboard, group: "Модули" },
   { id: "autoreplace", label: "Автозамена", icon: FileText, group: "Модули" },
   { id: "keyremap", label: "Клавиши", icon: Replace, group: "Модули" },
   { id: "translate", label: "Перевод", icon: Globe, group: "Модули" },
