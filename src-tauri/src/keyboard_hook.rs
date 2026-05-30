@@ -1,4 +1,4 @@
-use crate::{autoreplace, capslock, key_remap, translate};
+use crate::{autoreplace, capslock, exclusions, key_remap, translate};
 use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 use windows::Win32::{
@@ -95,9 +95,16 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
             return LRESULT(1);
         }
 
+        // Cache foreground process name once per event for exclusion checks.
+        let process_name = if (is_keydown || is_keyup) && !is_injected {
+            exclusions::foreground_process_name()
+        } else {
+            None
+        };
+
         if (is_keydown || is_keyup)
             && !is_injected
-            && key_remap::handle_key_event(event.vkCode, is_keyup)
+            && key_remap::handle_key_event(event.vkCode, is_keyup, process_name.as_deref())
         {
             return LRESULT(1);
         }
@@ -109,16 +116,17 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
         if is_keydown && !is_injected {
             let modifiers = ModifierState::current();
 
-            if event.vkCode == VK_CAPITAL.0 as u32 && capslock::handle_caps_lock_keydown(modifiers)
+            if event.vkCode == VK_CAPITAL.0 as u32
+                && capslock::handle_caps_lock_keydown(modifiers, process_name.as_deref())
             {
                 return LRESULT(1);
             }
 
-            if translate::handle_keydown(event.vkCode, modifiers) {
+            if translate::handle_keydown(event.vkCode, modifiers, process_name.as_deref()) {
                 return LRESULT(1);
             }
 
-            if autoreplace::handle_keydown(event.vkCode, event.scanCode, modifiers) {
+            if autoreplace::handle_keydown(event.vkCode, event.scanCode, modifiers, process_name.as_deref()) {
                 return LRESULT(1);
             }
         }

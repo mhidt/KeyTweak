@@ -22,8 +22,6 @@ const defaultConfig: Config = {
     whole_words_only: true,
     case_sensitive: false,
     replacements: [],
-    exception_mode: "blacklist",
-    exceptions: [],
   },
   key_remap: {
     enabled: true,
@@ -41,6 +39,8 @@ const defaultConfig: Config = {
     app_language: "en",
     theme: "system",
   },
+  exception_mode: "blacklist",
+  exceptions: [],
 };
 
 function inTauri() {
@@ -129,4 +129,19 @@ export function exportReplacementsJson(json: string) {
 export function importReplacementsJson() {
   if (!inTauri()) return Promise.resolve(null as string | null);
   return invoke<string | null>("import_replacements_json");
+}
+
+export interface RunningProgram {
+  exe_name: string;
+  display_name: string;
+}
+
+export function getRunningPrograms() {
+  if (!inTauri()) return Promise.resolve([] as RunningProgram[]);
+  return invoke<RunningProgram[]>("get_running_programs");
+}
+
+export function pickProgramFile() {
+  if (!inTauri()) return Promise.resolve(null as string | null);
+  return invoke<string | null>("pick_program_file");
 }

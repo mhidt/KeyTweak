@@ -1,4 +1,4 @@
-use crate::{config::TranslateConfig, keyboard_hook::ModifierState, keys::{self, press, press_code}, toast::{TranslationToastPayload, hide_translation_toast, show_translation_error, show_translation_toast}};
+use crate::{config::{TranslateConfig, ModuleId}, exclusions, keyboard_hook::ModifierState, keys::{self, press, press_code}, toast::{TranslationToastPayload, hide_translation_toast, show_translation_error, show_translation_toast}};
 use arboard::Clipboard;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -190,7 +190,11 @@ pub fn configure(config: &TranslateConfig) {
     *runtime_config = RuntimeConfig::from_config(config);
 }
 
-pub fn handle_keydown(vk_code: u32, modifiers: ModifierState) -> bool {
+pub fn handle_keydown(vk_code: u32, modifiers: ModifierState, process_name: Option<&str>) -> bool {
+    if exclusions::is_module_excluded(ModuleId::Translate, process_name) {
+        return false;
+    }
+
     let config = current_config();
 
     // Check translate hotkey

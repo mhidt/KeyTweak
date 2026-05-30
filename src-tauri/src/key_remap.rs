@@ -1,5 +1,6 @@
-use crate::{config::KeyRemapConfig, keys::{self, press}};
+use crate::{config::{KeyRemapConfig, ModuleId}, exclusions, keys::{self, press}};
 use std::{
+    collections::HashSet,
     sync::{Mutex, OnceLock},
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -29,6 +30,9 @@ enum RemapKey {
 }
 
 static CONFIG: OnceLock<Mutex<RuntimeConfig>> = OnceLock::new();
+/// Tracks vk_codes that were actually remapped on keydown,
+/// so that keyup is only remapped for keys that were remapped on keydown.
+static REMAPPED_KEYS: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
 
 pub fn configure(config: &KeyRemapConfig) {
     let mappings = config
@@ -68,7 +72,7 @@ pub fn has_right_alt_mapping() -> bool {
         .any(|m| m.from.matches_vk(VK_RMENU.0 as u32))
 }
 
-pub fn handle_key_event(vk_code: u32, is_keyup: bool) -> bool {
+pub fn handle_key_event(vk_code: u32, is_keyup: bool, process_name: Option<&str>) -> bool {
     let config = config_store()
         .lock()
         .expect("key remap config mutex poisoned")
@@ -86,7 +90,31 @@ pub fn handle_key_event(vk_code: u32, is_keyup: bool) -> bool {
         return false;
     };
 
-    send_key(mapping.to.output_vk(vk_code), is_keyup);
+    if is_keyup {
+        // Only remap keyup if this key was remapped on keydown
+        let mut remapped = remapped_keys_store()
+            .lock()
+            .expect("remapped keys mutex poisoned");
+        if !remapped.remove(&vk_code) {
+            // Key was NOT remapped on keydown (was excluded), pass through
+            return false;
+        }
+        send_key(mapping.to.output_vk(vk_code), true);
+        return true;
+    }
+
+    // keydown: check exclusions
+    if exclusions::is_module_excluded(ModuleId::KeyRemap, process_name) {
+        return false;
+    }
+
+    // Track that this key was remapped
+    remapped_keys_store()
+        .lock()
+        .expect("remapped keys mutex poisoned")
+        .insert(vk_code);
+
+    send_key(mapping.to.output_vk(vk_code), false);
     true
 }
 
@@ -151,4 +179,8 @@ fn send_key(vk: VIRTUAL_KEY, is_keyup: bool) {
 
 fn config_store() -> &'static Mutex<RuntimeConfig> {
     CONFIG.get_or_init(|| Mutex::new(RuntimeConfig::default()))
+}
+
+fn remapped_keys_store() -> &'static Mutex<HashSet<u32>> {
+    REMAPPED_KEYS.get_or_init(|| Mutex::new(HashSet::new()))
 }

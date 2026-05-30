@@ -1,5 +1,6 @@
 use crate::{
-    config::{CapsLockConfig, RealCapsCombo, SwitchMode},
+    config::{CapsLockConfig, ModuleId, RealCapsCombo, SwitchMode},
+    exclusions,
     keyboard_hook::ModifierState,
     keys,
 };
@@ -66,10 +67,14 @@ pub fn set_paused(paused: bool) {
     settings.paused = paused;
 }
 
-pub fn handle_caps_lock_keydown(modifiers: ModifierState) -> bool {
+pub fn handle_caps_lock_keydown(modifiers: ModifierState, process_name: Option<&str>) -> bool {
     let settings = *settings().lock().expect("capslock settings mutex poisoned");
 
     if settings.paused {
+        return false;
+    }
+
+    if exclusions::is_module_excluded(ModuleId::CapsLock, process_name) {
         return false;
     }
 

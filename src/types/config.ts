@@ -9,6 +9,8 @@ export interface Config {
   key_remap: KeyRemapConfig;
   translate: TranslateConfig;
   general: GeneralConfig;
+  exception_mode: ExceptionMode;
+  exceptions: ProgramException[];
 }
 
 export interface CapsLockConfig {
@@ -26,8 +28,6 @@ export interface AutoReplaceConfig {
   whole_words_only: boolean;
   case_sensitive: boolean;
   replacements: Replacement[];
-  exception_mode: ExceptionMode;
-  exceptions: ProgramException[];
 }
 
 export interface Replacement {
@@ -35,8 +35,12 @@ export interface Replacement {
   replacement: string;
 }
 
+export type ModuleId = "caps_lock" | "auto_replace" | "key_remap" | "translate";
+
 export interface ProgramException {
   program: string;
+  display_name?: string;
+  modules?: ModuleId[];
 }
 
 export interface KeyRemapConfig {

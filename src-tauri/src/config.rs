@@ -21,6 +21,10 @@ pub struct Config {
     pub translate: TranslateConfig,
     #[serde(default)]
     pub general: GeneralConfig,
+    #[serde(default)]
+    pub exception_mode: ExceptionMode,
+    #[serde(default)]
+    pub exceptions: Vec<ProgramException>,
 }
 
 impl Default for Config {
@@ -31,6 +35,8 @@ impl Default for Config {
             key_remap: KeyRemapConfig::default(),
             translate: TranslateConfig::default(),
             general: GeneralConfig::default(),
+            exception_mode: ExceptionMode::default(),
+            exceptions: Vec::new(),
         }
     }
 }
@@ -101,10 +107,6 @@ pub struct AutoReplaceConfig {
     pub case_sensitive: bool,
     #[serde(default)]
     pub replacements: Vec<Replacement>,
-    #[serde(default)]
-    pub exception_mode: ExceptionMode,
-    #[serde(default)]
-    pub exceptions: Vec<ProgramException>,
 }
 
 impl Default for AutoReplaceConfig {
@@ -117,8 +119,6 @@ impl Default for AutoReplaceConfig {
             whole_words_only: true,
             case_sensitive: false,
             replacements: Vec::new(),
-            exception_mode: ExceptionMode::default(),
-            exceptions: Vec::new(),
         }
     }
 }
@@ -132,6 +132,19 @@ pub struct Replacement {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgramException {
     pub program: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modules: Option<Vec<ModuleId>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModuleId {
+    CapsLock,
+    AutoReplace,
+    KeyRemap,
+    Translate,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

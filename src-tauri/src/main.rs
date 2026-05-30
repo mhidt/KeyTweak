@@ -6,6 +6,7 @@ mod autostart;
 mod capslock;
 mod commands;
 mod config;
+mod exclusions;
 mod key_remap;
 mod keyboard_hook;
 mod keys;
@@ -69,6 +70,8 @@ fn main() {
             commands::hide_translation_toast,
             commands::export_replacements_json,
             commands::import_replacements_json,
+            commands::get_running_programs,
+            commands::pick_program_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building KeyTweak")

@@ -1,5 +1,5 @@
 use crate::{
-    autoreplace, capslock, config::Config, key_remap, keyboard_hook::KeyboardHook,
+    autoreplace, capslock, config::Config, exclusions, key_remap, keyboard_hook::KeyboardHook,
     libretranslate_server::LibreTranslateServer, translate,
 };
 use std::sync::{
@@ -21,6 +21,7 @@ impl AppState {
         autoreplace::configure(&config.auto_replace);
         key_remap::configure(&config.key_remap);
         translate::configure(&config.translate);
+        exclusions::configure(config.exception_mode, &config.exceptions);
 
         Self {
             config: Mutex::new(config),
@@ -43,6 +44,7 @@ impl AppState {
         autoreplace::configure(&config.auto_replace);
         key_remap::configure(&config.key_remap);
         translate::configure(&config.translate);
+        exclusions::configure(config.exception_mode, &config.exceptions);
         self.caps_paused
             .store(config.caps_lock.paused, Ordering::Relaxed);
 
