@@ -134,6 +134,18 @@ impl Default for AutoReplaceConfig {
 pub struct Replacement {
     pub short: String,
     pub replacement: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exclusions: Vec<ExceptionProgram>,
+}
+
+/// A program that a specific replacement is excluded from. A lightweight
+/// counterpart to `ProgramException` (without per-module selection), reused for
+/// per-replacement blacklists in the auto-replace feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExceptionProgram {
+    pub program: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

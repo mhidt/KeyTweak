@@ -34,6 +34,12 @@ export interface AutoReplaceConfig {
 export interface Replacement {
   short: string;
   replacement: string;
+  exclusions?: ExceptionProgram[];
+}
+
+export interface ExceptionProgram {
+  program: string;
+  display_name?: string;
 }
 
 export type ModuleId = "caps_lock" | "auto_replace" | "key_remap" | "translate";

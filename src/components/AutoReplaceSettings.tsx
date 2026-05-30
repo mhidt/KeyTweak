@@ -1,7 +1,8 @@
-import { Download, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { Download, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import { useState } from "react";
-import type { Config, Replacement } from "../types/config";
+import type { Config, ExceptionProgram, Replacement } from "../types/config";
 import { exportReplacementsJson, importReplacementsJson } from "../lib/commands";
+import { ProgramCombobox } from "./ProgramCombobox";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog } from "./ui/dialog";
@@ -18,14 +19,72 @@ interface EditorState {
   index: number | null;
   short: string;
   replacement: string;
+  exclusions: ExceptionProgram[];
+}
+
+function exclusionLabel(item: ExceptionProgram): string {
+  return (
+    item.display_name ||
+    item.program.replace(/^.*[\\/]/, "").replace(/\.exe$/i, "")
+  );
 }
 
 export function AutoReplaceSettings({ config, onChange }: Props) {
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [exclusionInput, setExclusionInput] = useState("");
+  const [exclusionDisplay, setExclusionDisplay] = useState("");
   const auto = config.auto_replace;
 
   const updateAuto = (patch: Partial<Config["auto_replace"]>) =>
     onChange({ ...config, auto_replace: { ...auto, ...patch } });
+
+  const openEditor = (state: EditorState) => {
+    setEditor(state);
+    setExclusionInput("");
+    setExclusionDisplay("");
+  };
+
+  const closeEditor = () => {
+    setEditor(null);
+    setExclusionInput("");
+    setExclusionDisplay("");
+  };
+
+  const addExclusion = () => {
+    if (!editor) return;
+    const value = exclusionInput.trim();
+    if (!value) return;
+    if (
+      editor.exclusions.some(
+        (item) => item.program.toLowerCase() === value.toLowerCase(),
+      )
+    ) {
+      setExclusionInput("");
+      setExclusionDisplay("");
+      return;
+    }
+    const name = exclusionDisplay.trim();
+    setEditor({
+      ...editor,
+      exclusions: [
+        ...editor.exclusions,
+        {
+          program: value,
+          display_name: name && name !== value ? name : undefined,
+        },
+      ],
+    });
+    setExclusionInput("");
+    setExclusionDisplay("");
+  };
+
+  const removeExclusion = (index: number) => {
+    if (!editor) return;
+    setEditor({
+      ...editor,
+      exclusions: editor.exclusions.filter((_, i) => i !== index),
+    });
+  };
 
   const saveReplacement = () => {
     if (!editor || !editor.short.trim()) return;
@@ -33,11 +92,14 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
     const value: Replacement = {
       short: editor.short.trim(),
       replacement: editor.replacement,
+      ...(editor.exclusions.length > 0
+        ? { exclusions: editor.exclusions }
+        : {}),
     };
     if (editor.index === null) next.push(value);
     else next[editor.index] = value;
     updateAuto({ replacements: next });
-    setEditor(null);
+    closeEditor();
   };
 
   const exportJson = () => {
@@ -124,7 +186,12 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
           <Button
             size="sm"
             onClick={() =>
-              setEditor({ index: null, short: "", replacement: "" })
+              openEditor({
+                index: null,
+                short: "",
+                replacement: "",
+                exclusions: [],
+              })
             }
           >
             <Plus size={14} /> Добавить
@@ -136,6 +203,7 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
               <tr>
                 <Th>Шаблон</Th>
                 <Th>Замена</Th>
+                <Th>Исключения</Th>
                 <Th className="w-24" />
               </tr>
             </thead>
@@ -146,12 +214,29 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
                   <Td className="max-w-[280px] truncate">
                     {entry.replacement}
                   </Td>
+                  <Td
+                    className="max-w-[200px] truncate text-muted-foreground"
+                    title={(entry.exclusions ?? [])
+                      .map(exclusionLabel)
+                      .join(", ")}
+                  >
+                    {entry.exclusions && entry.exclusions.length > 0
+                      ? entry.exclusions.map(exclusionLabel).join(", ")
+                      : "—"}
+                  </Td>
                   <Td>
                     <div className="flex gap-1">
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setEditor({ index, ...entry })}
+                        onClick={() =>
+                          openEditor({
+                            index,
+                            short: entry.short,
+                            replacement: entry.replacement,
+                            exclusions: entry.exclusions ?? [],
+                          })
+                        }
                         aria-label="Edit"
                       >
                         <Pencil size={14} />
@@ -176,7 +261,7 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
               ))}
               {auto.replacements.length === 0 ? (
                 <tr>
-                  <Td colSpan={3} className="text-muted-foreground">
+                  <Td colSpan={4} className="text-muted-foreground">
                     Нет настроенных замен.
                   </Td>
                 </tr>
@@ -191,7 +276,7 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
         title={
           editor?.index === null ? "Добавить замену" : "Редактировать замену"
         }
-        onClose={() => setEditor(null)}
+        onClose={closeEditor}
       >
         <div className="space-y-4">
           <div className="space-y-2">
@@ -220,8 +305,56 @@ export function AutoReplaceSettings({ config, onChange }: Props) {
               }
             />
           </div>
+          <div className="space-y-2">
+            <Label>Исключения (не работает в этих программах)</Label>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <ProgramCombobox
+                  value={exclusionInput}
+                  displayValue={exclusionDisplay}
+                  onChange={(v) => {
+                    setExclusionInput(v);
+                    setExclusionDisplay(v);
+                  }}
+                  onSubmit={addExclusion}
+                  onSelectProgram={(exeName, displayName) => {
+                    setExclusionInput(exeName);
+                    setExclusionDisplay(displayName || exeName);
+                  }}
+                />
+              </div>
+              <Button type="button" onClick={addExclusion}>
+                <Plus size={14} /> Добавить
+              </Button>
+            </div>
+            {editor && editor.exclusions.length > 0 ? (
+              <div className="flex flex-wrap gap-2 pt-1">
+                {editor.exclusions.map((item, i) => (
+                  <span
+                    key={`${item.program}-${i}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs"
+                    title={item.program}
+                  >
+                    {exclusionLabel(item)}
+                    <button
+                      type="button"
+                      onClick={() => removeExclusion(i)}
+                      className="text-muted-foreground hover:text-foreground"
+                      aria-label="Удалить исключение"
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Нет исключений — замена работает во всех программах.
+              </p>
+            )}
+          </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setEditor(null)}>
+            <Button variant="outline" onClick={closeEditor}>
               Отмена
             </Button>
             <Button onClick={saveReplacement}>Сохранить</Button>

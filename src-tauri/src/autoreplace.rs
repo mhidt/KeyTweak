@@ -83,7 +83,7 @@ pub fn handle_keydown(vk_code: u32, scan_code: u32, modifiers: ModifierState, pr
     sync_foreground_buffer();
 
     if let Some(separator) = separator_for_vk(vk_code, &config) {
-        return handle_separator(separator, &config);
+        return handle_separator(separator, &config, process_name);
     }
 
     if vk_code == VK_BACK.0 as u32 {
@@ -113,7 +113,7 @@ pub fn handle_keydown(vk_code: u32, scan_code: u32, modifiers: ModifierState, pr
     false
 }
 
-fn handle_separator(separator: char, config: &RuntimeConfig) -> bool {
+fn handle_separator(separator: char, config: &RuntimeConfig, process_name: Option<&str>) -> bool {
     let word = {
         let buffer = buffer_store()
             .lock()
@@ -131,7 +131,7 @@ fn handle_separator(separator: char, config: &RuntimeConfig) -> bool {
         return false;
     }
 
-    if let Some(replacement) = find_replacement(config, &word) {
+    if let Some(replacement) = find_replacement(config, &word, process_name) {
         if !replace_word(&word, &replacement) {
             log::error!("failed to send autoreplace input for separator '{separator}'");
         }
@@ -160,7 +160,7 @@ fn push_to_buffer(ch: char) {
     }
 }
 
-fn find_replacement(config: &RuntimeConfig, word: &str) -> Option<String> {
+fn find_replacement(config: &RuntimeConfig, word: &str, process_name: Option<&str>) -> Option<String> {
     if !config.whole_words_only && word.is_empty() {
         return None;
     }
@@ -184,8 +184,29 @@ fn find_replacement(config: &RuntimeConfig, word: &str) -> Option<String> {
             needle.ends_with(&short)
         };
 
-        matched.then(|| entry.replacement.clone())
+        if !matched || is_replacement_excluded(entry, process_name) {
+            return None;
+        }
+
+        Some(entry.replacement.clone())
     })
+}
+
+/// Returns `true` if this replacement is blacklisted for the current foreground
+/// program (per-replacement exclusion list).
+fn is_replacement_excluded(entry: &Replacement, process_name: Option<&str>) -> bool {
+    if entry.exclusions.is_empty() {
+        return false;
+    }
+
+    let Some(process_name) = process_name else {
+        return false;
+    };
+
+    entry
+        .exclusions
+        .iter()
+        .any(|excluded| exclusions::program_matches(&excluded.program, process_name))
 }
 
 fn separator_for_vk(vk_code: u32, config: &RuntimeConfig) -> Option<char> {
@@ -273,6 +294,7 @@ mod tests {
         config.replacements = vec![Replacement {
             short: "почта".to_string(),
             replacement: "myemail@gmail.com".to_string(),
+            exclusions: Vec::new(),
         }];
         config
     }
@@ -282,7 +304,7 @@ mod tests {
         let config = config_with_replacements();
 
         assert_eq!(
-            find_replacement(&config, "ПОЧТА"),
+            find_replacement(&config, "ПОЧТА", None),
             Some("myemail@gmail.com".to_string())
         );
     }
@@ -292,9 +314,9 @@ mod tests {
         let mut config = config_with_replacements();
         config.case_sensitive = true;
 
-        assert_eq!(find_replacement(&config, "ПОЧТА"), None);
+        assert_eq!(find_replacement(&config, "ПОЧТА", None), None);
         assert_eq!(
-            find_replacement(&config, "почта"),
+            find_replacement(&config, "почта", None),
             Some("myemail@gmail.com".to_string())
         );
     }
@@ -305,7 +327,36 @@ mod tests {
         config.whole_words_only = false;
 
         assert_eq!(
-            find_replacement(&config, "мояпочта"),
+            find_replacement(&config, "мояпочта", None),
+            Some("myemail@gmail.com".to_string())
+        );
+    }
+
+    #[test]
+    fn skips_replacement_excluded_for_current_program() {
+        use crate::config::ExceptionProgram;
+
+        let mut config = config_with_replacements();
+        config.replacements[0].exclusions = vec![ExceptionProgram {
+            program: "code.exe".to_string(),
+            display_name: None,
+        }];
+
+        // Excluded program: no replacement.
+        assert_eq!(find_replacement(&config, "почта", Some("code.exe")), None);
+        // Excluded program given as full path still matches by file name.
+        assert_eq!(
+            find_replacement(&config, "почта", Some("code.exe")),
+            find_replacement(&config, "почта", Some("code.exe"))
+        );
+        // Different program: replacement still works.
+        assert_eq!(
+            find_replacement(&config, "почта", Some("notepad.exe")),
+            Some("myemail@gmail.com".to_string())
+        );
+        // Unknown foreground program: replacement works.
+        assert_eq!(
+            find_replacement(&config, "почта", None),
             Some("myemail@gmail.com".to_string())
         );
     }

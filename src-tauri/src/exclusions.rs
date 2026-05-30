@@ -118,6 +118,14 @@ fn same_process_name(configured: &str, actual: &str) -> bool {
     configured == actual
 }
 
+/// Returns `true` if a configured program name/path matches the lowercased
+/// filename of the actual foreground process. Reused by features that keep
+/// their own per-item program lists (e.g. per-replacement auto-replace
+/// exclusions).
+pub fn program_matches(configured: &str, actual: &str) -> bool {
+    same_process_name(configured, actual)
+}
+
 fn config_store() -> &'static Mutex<ExclusionsConfig> {
     CONFIG.get_or_init(|| Mutex::new(ExclusionsConfig::default()))
 }
