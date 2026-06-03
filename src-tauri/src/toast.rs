@@ -179,8 +179,10 @@ fn position_startup_toast_window(window: &tauri::WebviewWindow<Wry>) -> tauri::R
     let mb = MonitorBounds::from_monitor(&monitor);
     let window_size = window.outer_size()?;
     let margin = 18;
+    let extra_top_offset = 50;
 
-    window.set_position(mb.corner_pos(window_size, margin))
+    let pos = mb.corner_pos(window_size, margin);
+    window.set_position(PhysicalPosition::new(pos.x, pos.y - extra_top_offset))
 }
 
 fn cursor_position() -> Option<PhysicalPosition<i32>> {
