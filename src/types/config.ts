@@ -1,5 +1,3 @@
-export type SwitchMode = "previous" | "default";
-export type SwitchMethod = "hotkey" | "programmatic";
 export type RealCapsCombo = "shift_caps" | "alt_caps" | "ctrl_caps";
 export type ExceptionMode = "blacklist" | "whitelist";
 export type ThemeMode = "system" | "light" | "dark";
@@ -15,8 +13,6 @@ export interface Config {
 }
 
 export interface CapsLockConfig {
-  switch_method: SwitchMethod;
-  switch_mode: SwitchMode;
   switch_key: string;
   real_caps_combo: RealCapsCombo;
   auto_start: boolean;

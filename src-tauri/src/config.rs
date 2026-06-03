@@ -43,10 +43,6 @@ impl Default for Config {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapsLockConfig {
-    #[serde(default)]
-    pub switch_method: SwitchMethod,
-    #[serde(default)]
-    pub switch_mode: SwitchMode,
     #[serde(default = "default_switch_key")]
     pub switch_key: String,
     #[serde(default)]
@@ -60,8 +56,6 @@ pub struct CapsLockConfig {
 impl Default for CapsLockConfig {
     fn default() -> Self {
         Self {
-            switch_method: SwitchMethod::default(),
-            switch_mode: SwitchMode::Previous,
             switch_key: default_switch_key(),
             real_caps_combo: RealCapsCombo::ShiftCaps,
             auto_start: true,
@@ -72,35 +66,6 @@ impl Default for CapsLockConfig {
 
 fn default_switch_key() -> String {
     "capslock".to_string()
-}
-
-/// How the language switch is performed when the trigger key fires.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SwitchMethod {
-    /// Emulate the system layout-switch hotkey (Left Shift + Left Alt).
-    Hotkey,
-    /// Set the layout programmatically via the Windows keyboard-layout API.
-    Programmatic,
-}
-
-impl Default for SwitchMethod {
-    fn default() -> Self {
-        Self::Hotkey
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SwitchMode {
-    Previous,
-    Default,
-}
-
-impl Default for SwitchMode {
-    fn default() -> Self {
-        Self::Previous
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -468,7 +433,7 @@ mod tests {
         let path = temp_dir.path().join("KeyTweak").join("config.json");
         let original = Config::default();
         let mut updated = Config::default();
-        updated.caps_lock.switch_mode = SwitchMode::Default;
+        updated.caps_lock.paused = true;
         updated.translate.target_language = "en".to_string();
 
         save_config_to_path(&path, &original).expect("save original config");

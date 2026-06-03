@@ -1,26 +1,14 @@
 use crate::{
-    config::{CapsLockConfig, ModuleId, RealCapsCombo, SwitchMethod, SwitchMode},
+    config::{CapsLockConfig, ModuleId, RealCapsCombo},
     exclusions,
     keyboard_hook::ModifierState,
     keys,
 };
-use std::{
-    ffi::c_void,
-    sync::{Mutex, OnceLock},
-};
-use thiserror::Error;
-use windows::Win32::{
-    UI::Input::KeyboardAndMouse::{
-        ActivateKeyboardLayout, GetKeyboardLayoutList, HKL, KLF_REORDER, VK_CAPITAL, VK_LMENU,
-        VK_LSHIFT,
-    },
-    UI::WindowsAndMessaging::{GetForegroundWindow, PostMessageW, WM_INPUTLANGCHANGEREQUEST},
-};
+use std::sync::{Mutex, OnceLock};
+use windows::Win32::UI::Input::KeyboardAndMouse::{VK_CAPITAL, VK_LWIN, VK_SPACE};
 
 #[derive(Debug, Clone, Copy)]
 struct RuntimeSettings {
-    switch_method: SwitchMethod,
-    switch_mode: SwitchMode,
     real_caps_combo: RealCapsCombo,
     /// Virtual-key code of the configured trigger key. `None` if the configured
     /// key name could not be resolved (the language switch is then disabled).
@@ -33,8 +21,6 @@ impl Default for RuntimeSettings {
         let config = CapsLockConfig::default();
 
         Self {
-            switch_method: config.switch_method,
-            switch_mode: config.switch_mode,
             real_caps_combo: config.real_caps_combo,
             switch_key_vk: resolve_switch_key(&config.switch_key),
             paused: config.paused,
@@ -46,27 +32,11 @@ fn resolve_switch_key(name: &str) -> Option<u32> {
     keys::key_name_to_vk(name).map(|vk| vk.0 as u32)
 }
 
-#[derive(Debug, Default)]
-struct LayoutState {
-    previous_layout: Option<usize>,
-}
-
-#[derive(Debug, Error)]
-pub enum CapsLockError {
-    #[error("no keyboard layouts are installed")]
-    NoLayouts,
-    #[error("failed to activate keyboard layout")]
-    Activate,
-}
-
 static SETTINGS: OnceLock<Mutex<RuntimeSettings>> = OnceLock::new();
-static LAYOUT_STATE: OnceLock<Mutex<LayoutState>> = OnceLock::new();
 
 pub fn configure(config: &CapsLockConfig) {
     let mut settings = settings().lock().expect("capslock settings mutex poisoned");
     *settings = RuntimeSettings {
-        switch_method: config.switch_method,
-        switch_mode: config.switch_mode,
         real_caps_combo: config.real_caps_combo,
         switch_key_vk: resolve_switch_key(&config.switch_key),
         paused: config.paused,
@@ -111,27 +81,21 @@ pub fn handle_caps_lock_keydown(modifiers: ModifierState, process_name: Option<&
         return false;
     }
 
-    match settings.switch_method {
-        SwitchMethod::Hotkey => send_layout_switch_hotkey(),
-        SwitchMethod::Programmatic => {
-            if let Err(error) = switch_layout(settings.switch_mode) {
-                log::error!("failed to switch keyboard layout: {error}");
-            }
-        }
-    }
+    send_layout_switch_hotkey();
 
     true
 }
 
-/// Sends the system layout-switch hotkey (Left Shift + Left Alt) via SendInput.
-/// Order matters: Windows only recognizes it when Alt is released before Shift.
+/// Sends the system layout-switch hotkey (Left Win + Space) via SendInput.
+/// Order matters: Space is pressed and released while Win is held down,
+/// then Win is released last.
 /// Injected events carry LLKHF_INJECTED, so our own hook ignores them.
 fn send_layout_switch_hotkey() {
     let inputs = [
-        keys::press(VK_LSHIFT, false), // Shift down
-        keys::press(VK_LMENU, false),  // Alt   down
-        keys::press(VK_LMENU, true),   // Alt   up
-        keys::press(VK_LSHIFT, true),  // Shift up
+        keys::press(VK_LWIN, false),  // Win   down
+        keys::press(VK_SPACE, false), // Space down
+        keys::press(VK_SPACE, true),  // Space up
+        keys::press(VK_LWIN, true),   // Win   up
     ];
 
     let sent = keys::send_inputs(&inputs);
@@ -154,116 +118,6 @@ fn is_real_caps_combo(combo: RealCapsCombo, modifiers: ModifierState) -> bool {
     }
 }
 
-fn switch_layout(mode: SwitchMode) -> Result<(), CapsLockError> {
-    match mode {
-        SwitchMode::Previous => switch_previous_layout(),
-        SwitchMode::Default => switch_next_layout(),
-    }
-}
-
-fn switch_previous_layout() -> Result<(), CapsLockError> {
-    let current = current_layout_id();
-    let previous = {
-        let state = layout_state()
-            .lock()
-            .expect("capslock layout state mutex poisoned");
-        state.previous_layout
-    };
-
-    let target = match previous {
-        Some(previous) if previous != current => previous,
-        _ => next_layout_id(current)?,
-    };
-
-    activate_layout(target)?;
-
-    let mut state = layout_state()
-        .lock()
-        .expect("capslock layout state mutex poisoned");
-    state.previous_layout = Some(current);
-
-    Ok(())
-}
-
-fn switch_next_layout() -> Result<(), CapsLockError> {
-    let current = current_layout_id();
-    let target = next_layout_id(current)?;
-
-    activate_layout(target)?;
-
-    let mut state = layout_state()
-        .lock()
-        .expect("capslock layout state mutex poisoned");
-    state.previous_layout = Some(current);
-
-    Ok(())
-}
-
-fn current_layout_id() -> usize {
-    keys::foreground_layout().0 as usize
-}
-
-fn next_layout_id(current: usize) -> Result<usize, CapsLockError> {
-    let layouts = installed_layouts();
-
-    if layouts.is_empty() {
-        return Err(CapsLockError::NoLayouts);
-    }
-
-    let current_index = layouts
-        .iter()
-        .position(|layout| *layout == current)
-        .unwrap_or(0);
-    let next_index = (current_index + 1) % layouts.len();
-
-    Ok(layouts[next_index])
-}
-
-fn installed_layouts() -> Vec<usize> {
-    let count = unsafe { GetKeyboardLayoutList(None) };
-
-    if count <= 0 {
-        return Vec::new();
-    }
-
-    let mut layouts = vec![HKL(std::ptr::null_mut()); count as usize];
-    let actual = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) };
-
-    layouts
-        .into_iter()
-        .take(actual.max(0) as usize)
-        .map(|layout| layout.0 as usize)
-        .collect()
-}
-
-fn activate_layout(layout: usize) -> Result<(), CapsLockError> {
-    let hkl = HKL(layout as *mut c_void);
-
-    unsafe { ActivateKeyboardLayout(hkl, KLF_REORDER) }
-        .map(|_| ())
-        .map_err(|_| CapsLockError::Activate)?;
-
-    let foreground = unsafe { GetForegroundWindow() };
-    let lparam = windows::Win32::Foundation::LPARAM(layout as isize);
-    let wparam = windows::Win32::Foundation::WPARAM(0);
-
-    if !foreground.is_invalid() {
-        let _ = unsafe { PostMessageW(foreground, WM_INPUTLANGCHANGEREQUEST, wparam, lparam) };
-    }
-
-    // Broadcast to all top-level windows so the layout switches system-wide,
-    // even when no input-capable window is in the foreground (e.g. desktop).
-    use windows::Win32::Foundation::HWND;
-    let hwnd_broadcast = HWND(0xFFFF as *mut c_void);
-    let _ = unsafe { PostMessageW(hwnd_broadcast, WM_INPUTLANGCHANGEREQUEST, wparam, lparam) };
-
-    Ok(())
-}
-
 fn settings() -> &'static Mutex<RuntimeSettings> {
     SETTINGS.get_or_init(|| Mutex::new(RuntimeSettings::default()))
-}
-
-fn layout_state() -> &'static Mutex<LayoutState> {
-    LAYOUT_STATE.get_or_init(|| Mutex::new(LayoutState::default()))
 }
