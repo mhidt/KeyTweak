@@ -1,6 +1,7 @@
-import { Eye, EyeOff } from "lucide-react";
-import { useRef, useState } from "react";
-import { testTranslateApi } from "../lib/commands";
+import { Eye, EyeOff, HardDrive, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { getTranslationStatus, testTranslateApi } from "../lib/commands";
+import type { TranslationStatus } from "../lib/commands";
 import { capturedHotkeyCombo } from "../lib/keys";
 import type { Config } from "../types/config";
 import { Button } from "./ui/button";
@@ -24,7 +25,12 @@ export function TranslateSettings({ config, onChange }: Props) {
   const [captureField, setCaptureField] = useState<HotkeyCaptureField | null>(null);
   const [captureBuffer, setCaptureBuffer] = useState<string[]>([]);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [translationStatus, setTranslationStatus] = useState<TranslationStatus | null>(null);
   const translate = config.translate;
+
+  useEffect(() => {
+    getTranslationStatus().then(setTranslationStatus).catch(() => {});
+  }, []);
 
   const updateTranslate = (patch: Partial<Config["translate"]>) =>
     onChange({ ...config, translate: { ...translate, ...patch } });
@@ -142,6 +148,31 @@ export function TranslateSettings({ config, onChange }: Props) {
 
   return (
     <>
+      <div className="rounded-md border border-border bg-muted/35 px-4 py-3 space-y-1">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <HardDrive size={16} />
+          Локальный переводчик
+        </div>
+        {translationStatus?.sidecar_installed && translationStatus?.models_installed ? (
+          <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+            <CheckCircle2 size={14} />
+            {translationStatus.sidecar_running
+              ? "Установлен и работает"
+              : "Установлен (запустится при первом переводе)"}
+          </div>
+        ) : translationStatus?.sidecar_installed && !translationStatus?.models_installed ? (
+          <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-400">
+            <AlertTriangle size={14} />
+            Sidecar установлен, но файлы моделей не найдены. Переустановите KeyTweak с компонентом перевода.
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">
+            Не установлен. Перевод работает через удалённый сервер LibreTranslate.
+            Запустите установщик повторно для добавления компонента перевода.
+          </div>
+        )}
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="translate-server-url">
           Адрес сервера LibreTranslate

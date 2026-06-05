@@ -1,7 +1,7 @@
 use crate::{autostart, config, config::Config, state::AppState, toast, translate, tray};
-use tauri::{AppHandle, State};
-
 use serde::Serialize;
+use std::sync::Arc;
+use tauri::{AppHandle, State};
 use std::collections::HashMap;
 use std::fs;
 use windows::{
@@ -207,12 +207,12 @@ unsafe extern "system" fn enum_windows_callback(
 type CommandResult<T> = Result<T, String>;
 
 #[tauri::command]
-pub fn get_config(state: State<'_, AppState>) -> Config {
+pub fn get_config(state: State<'_, Arc<AppState>>) -> Config {
     state.config()
 }
 
 #[tauri::command]
-pub fn set_config(cfg: Config, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn set_config(cfg: Config, state: State<'_, Arc<AppState>>) -> CommandResult<()> {
     config::save_config(&cfg).map_err(|error| error.to_string())?;
     state.set_config(cfg);
     Ok(())
@@ -222,14 +222,14 @@ pub fn set_config(cfg: Config, state: State<'_, AppState>) -> CommandResult<()> 
 pub fn pause_caps_lock(
     paused: bool,
     app: AppHandle,
-    state: State<'_, AppState>,
+    state: State<'_, Arc<AppState>>,
 ) -> CommandResult<()> {
     state.set_caps_paused(paused);
     tray::rebuild_tray_menu(&app).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn is_caps_paused(state: State<'_, AppState>) -> bool {
+pub fn is_caps_paused(state: State<'_, Arc<AppState>>) -> bool {
     state.caps_paused()
 }
 
@@ -337,5 +337,21 @@ pub fn pick_program_file() -> Option<String> {
     dialog.pick_file().and_then(|path| {
         path.file_name()
             .map(|name| name.to_string_lossy().to_lowercase())
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TranslationStatus {
+    pub sidecar_installed: bool,
+    pub models_installed: bool,
+    pub sidecar_running: bool,
+}
+
+#[tauri::command]
+pub async fn get_translation_status(state: State<'_, Arc<AppState>>) -> Result<TranslationStatus, String> {
+    Ok(TranslationStatus {
+        sidecar_installed: state.sidecar_is_installed(),
+        models_installed: state.models_are_installed(),
+        sidecar_running: state.sidecar_is_running(),
     })
 }

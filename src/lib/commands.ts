@@ -151,3 +151,14 @@ export function pickProgramFile() {
   if (!inTauri()) return Promise.resolve(null as string | null);
   return invoke<string | null>("pick_program_file");
 }
+
+export interface TranslationStatus {
+  sidecar_installed: boolean;
+  models_installed: boolean;
+  sidecar_running: boolean;
+}
+
+export function getTranslationStatus() {
+  if (!inTauri()) return Promise.resolve({ sidecar_installed: false, models_installed: false } as TranslationStatus);
+  return invoke<TranslationStatus>("get_translation_status");
+}

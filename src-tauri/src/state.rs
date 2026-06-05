@@ -1,17 +1,28 @@
 use crate::{
     autoreplace, capslock, config::Config, exclusions, key_remap, keyboard_hook::KeyboardHook,
-    libretranslate_server::LibreTranslateServer, translate,
+    sidecar::TranslatorSidecar, translate,
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Mutex,
+    Arc, OnceLock,
 };
+use tokio::sync::Mutex;
+
+static GLOBAL_APP_STATE: OnceLock<Arc<AppState>> = OnceLock::new();
+
+pub fn init_global_app_state(state: Arc<AppState>) {
+    let _ = GLOBAL_APP_STATE.set(state);
+}
+
+pub fn global_app_state() -> Option<Arc<AppState>> {
+    GLOBAL_APP_STATE.get().cloned()
+}
 
 pub struct AppState {
-    config: Mutex<Config>,
+    config: std::sync::Mutex<Config>,
     caps_paused: AtomicBool,
-    keyboard_hook: Mutex<Option<KeyboardHook>>,
-    libretranslate_server: LibreTranslateServer,
+    keyboard_hook: std::sync::Mutex<Option<KeyboardHook>>,
+    sidecar: Arc<Mutex<TranslatorSidecar>>,
 }
 
 impl AppState {
@@ -23,11 +34,18 @@ impl AppState {
         translate::configure(&config.translate);
         exclusions::configure(config.exception_mode, &config.exceptions);
 
+        let mut sidecar = TranslatorSidecar::new();
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                sidecar.set_install_dir(parent.to_path_buf());
+            }
+        }
+
         Self {
-            config: Mutex::new(config),
+            config: std::sync::Mutex::new(config),
             caps_paused: AtomicBool::new(caps_paused),
-            keyboard_hook: Mutex::new(None),
-            libretranslate_server: LibreTranslateServer::new(),
+            keyboard_hook: std::sync::Mutex::new(None),
+            sidecar: Arc::new(Mutex::new(sidecar)),
         }
     }
 
@@ -86,11 +104,57 @@ impl AppState {
         }
     }
 
-    pub fn start_libretranslate_server(&self) {
-        self.libretranslate_server.start();
+    pub async fn start_sidecar(&self) {
+        let sidecar = self.sidecar.lock().await;
+        if sidecar.is_installed() {
+            if let Err(e) = sidecar.start().await {
+                log::error!("Failed to start translator sidecar: {e}");
+            }
+        } else {
+            log::info!("Translator sidecar not installed, skipping");
+        }
     }
 
-    pub fn stop_libretranslate_server(&self) {
-        self.libretranslate_server.stop();
+    pub async fn stop_sidecar(&self) {
+        let sidecar = self.sidecar.lock().await;
+        sidecar.stop().await;
+    }
+
+    pub async fn sidecar_translate(
+        &self,
+        text: &str,
+        source: &str,
+        target: &str,
+    ) -> Result<String, crate::sidecar::SidecarErrorType> {
+        let sidecar = self.sidecar.lock().await;
+        sidecar.translate(text, source, target).await
+    }
+
+    pub fn sidecar_is_installed(&self) -> bool {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                return parent.join("translator").join("translator.exe").exists();
+            }
+        }
+        false
+    }
+
+    pub fn models_are_installed(&self) -> bool {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                let models_dir = parent.join("translator-models");
+                return models_dir.join("translate-en_ru-1_9").exists()
+                    && models_dir.join("translate-ru_en-1_9").exists();
+            }
+        }
+        false
+    }
+
+    pub fn sidecar_is_running(&self) -> bool {
+        if let Ok(sidecar) = self.sidecar.try_lock() {
+            sidecar.is_running()
+        } else {
+            true
+        }
     }
 }

@@ -393,12 +393,6 @@ fn trigger_reverse_translate(config: RuntimeConfig) {
 }
 
 fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
-    let server_url = config.server_url.trim();
-    if server_url.is_empty() {
-        show_translation_error("Ошибка перевода: адрес сервера LibreTranslate не настроен.");
-        return;
-    }
-
     let detected = detect_language(&text);
     let target = if reverse {
         reverse_target_language(&config.target_language)
@@ -408,7 +402,13 @@ fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
         normalize_target_language(&config.target_language)
     };
 
-    match translate_text(&text, &target, server_url, &config.api_key) {
+    let source = if config.auto_detect_language {
+        detected.to_string()
+    } else {
+        detect_source_from_target(&target)
+    };
+
+    match translate_text_sidecar(&text, &source, &target) {
         Ok(translated) => show_translation_toast(TranslationToastPayload {
             original: text,
             translated,
@@ -416,7 +416,24 @@ fn run_translation_flow(text: String, config: RuntimeConfig, reverse: bool) {
             target_lang: target,
             reverse,
         }),
-        Err(error) => show_translation_error(&format!("Ошибка перевода: {error}")),
+        Err(sidecar_err) => {
+            log::warn!("Sidecar translate failed: {sidecar_err}, falling back to remote");
+            let server_url = config.server_url.trim();
+            if server_url.is_empty() {
+                show_translation_error("Ошибка перевода: локальный переводчик недоступен, а адрес сервера LibreTranslate не настроен.");
+                return;
+            }
+            match translate_text_remote(&text, &target, server_url, &config.api_key) {
+                Ok(translated) => show_translation_toast(TranslationToastPayload {
+                    original: text.clone(),
+                    translated,
+                    source_lang: detected.to_string(),
+                    target_lang: target,
+                    reverse,
+                }),
+                Err(error) => show_translation_error(&format!("Ошибка перевода: {error}")),
+            }
+        }
     }
 }
 
@@ -433,7 +450,31 @@ fn detect_language(text: &str) -> &'static str {
     }
 }
 
-fn translate_text(
+fn translate_text_sidecar(
+    text: &str,
+    source: &str,
+    target: &str,
+) -> Result<String, crate::sidecar::SidecarErrorType> {
+    let app_state = crate::state::global_app_state()
+        .ok_or(crate::sidecar::SidecarErrorType::NotReady("app state not available".to_string()))?;
+
+    tauri::async_runtime::block_on(async {
+        let mut attempts = 0u32;
+        loop {
+            match app_state.sidecar_translate(text, source, target).await {
+                Ok(result) => return Ok(result),
+                Err(crate::sidecar::SidecarErrorType::Crashed { retryable: true }) if attempts < 3 => {
+                    attempts += 1;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    })
+}
+
+fn translate_text_remote(
     text: &str,
     target: &str,
     server_url: &str,
@@ -460,7 +501,6 @@ fn translate_text(
 
     let status = response.status();
     if !status.is_success() {
-        // Try to extract LibreTranslate error message from body.
         let body_text = response.text().unwrap_or_default();
         let detail = serde_json::from_str::<LibreTranslateError>(&body_text)
             .map(|e| e.error)
@@ -482,18 +522,32 @@ fn translate_text(
     Ok(response.translated_text)
 }
 
-pub fn test_translate_api(server_url: &str, api_key: &str, target: &str) -> Result<String, String> {
-    let server_url = server_url.trim();
-    if server_url.is_empty() {
-        return Err("Адрес сервера LibreTranslate не настроен".to_string());
+fn detect_source_from_target(target: &str) -> String {
+    if target.eq_ignore_ascii_case("ru") {
+        "en".to_string()
+    } else {
+        "ru".to_string()
     }
+}
 
+pub fn test_translate_api(server_url: &str, api_key: &str, target: &str) -> Result<String, String> {
     let target = target.trim().to_lowercase();
     if target != "ru" && target != "en" {
         return Err("целевой язык должен быть 'ru' или 'en'".to_string());
     }
 
-    translate_text("hello", &target, server_url, api_key)
+    let source = detect_source_from_target(&target);
+
+    if let Ok(result) = translate_text_sidecar("hello", &source, &target) {
+        return Ok(result);
+    }
+
+    let server_url = server_url.trim();
+    if server_url.is_empty() {
+        return Err("Адрес сервера LibreTranslate не настроен".to_string());
+    }
+
+    translate_text_remote("hello", &target, server_url, api_key)
 }
 
 /// Replaces the currently selected text in the active window with `text`

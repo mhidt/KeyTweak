@@ -3,6 +3,13 @@ dist/
 
 src-tauri/target/
 src-tauri/gen/
+src-tauri/translator-models/
+src-tauri/binaries/
 
 .superpowers/
 docs/
+scripts/
+
+translator/dist/
+translator/build/
+translator-rs/target/

@@ -11,7 +11,7 @@ mod exclusions;
 mod key_remap;
 mod keyboard_hook;
 mod keys;
-mod libretranslate_server;
+mod sidecar;
 mod state;
 mod toast;
 mod translate;
@@ -19,6 +19,7 @@ mod tray;
 mod window;
 
 use crate::{config::Config, state::AppState};
+use std::sync::Arc;
 use tauri::Manager;
 
 fn main() {
@@ -28,28 +29,29 @@ fn main() {
         log::error!("failed to load config, using defaults: {error}");
         Config::default()
     });
-    let state = AppState::new(config);
+    let state = Arc::new(AppState::new(config));
+    crate::state::init_global_app_state(state.clone());
 
     tauri::Builder::default()
-        .manage(state)
+        .manage(state.clone())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             let _ = window::show_settings(app);
         }))
         .setup(|app| {
             toast::set_app_handle(app.handle().clone());
-            let state = app.state::<AppState>();
-            state.install_keyboard_hook()?;
-            if state.config().caps_lock.auto_start {
+            let state_inner = crate::state::global_app_state().unwrap();
+            state_inner.install_keyboard_hook()?;
+            if state_inner.config().caps_lock.auto_start {
                 if let Err(error) = autostart::set_auto_start(true) {
                     log::error!("failed to repair Windows startup entry: {error}");
                 }
             }
             if let Err(error) =
-                autostart::set_run_as_admin(state.config().general.run_as_admin)
+                autostart::set_run_as_admin(state_inner.config().general.run_as_admin)
             {
                 log::error!("failed to apply run-as-admin setting: {error}");
             }
-            state.start_libretranslate_server();
+            tauri::async_runtime::block_on(state_inner.start_sidecar());
             tray::setup_tray(&app.handle())?;
             toast::show_startup_toast();
 
@@ -79,6 +81,7 @@ fn main() {
             commands::import_replacements_json,
             commands::get_running_programs,
             commands::pick_program_file,
+            commands::get_translation_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building KeyTweak")
@@ -86,7 +89,9 @@ fn main() {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Some(state) = app.try_state::<AppState>() {
                     state.uninstall_keyboard_hook();
-                    state.stop_libretranslate_server();
+                }
+                if let Some(state) = crate::state::global_app_state() {
+                    tauri::async_runtime::block_on(state.stop_sidecar());
                 }
             }
         });

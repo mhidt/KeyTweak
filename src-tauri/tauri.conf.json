@@ -39,13 +39,26 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "targets": "all",
+    "publisher": "KeyTweak",
+    "copyright": "",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": null,
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "template": "./windows/nsis/installer.nsi",
+        "installerHooks": "./windows/hooks.nsh",
+        "displayLanguageSelector": false,
+        "compression": "bzip2"
+      }
+    }
   }
 }
