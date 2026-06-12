@@ -403,7 +403,7 @@ Function TranslatorOptionsPage
   ${If} $0 == error
     Abort
   ${EndIf}
-  ${NSD_CreateCheckbox} 0 0u 100% 12u "Скачать модели перевода (~370 МБ из интернета)"
+  ${NSD_CreateCheckbox} 0 0u 100% 12u "Скачать модели перевода (~370 МБ). Необходим интернет, возможно потребуется VPN"
   Pop $TranslatorCheckbox
   ${NSD_SetState} $TranslatorCheckbox ${BST_CHECKED}
   nsDialogs::Show
