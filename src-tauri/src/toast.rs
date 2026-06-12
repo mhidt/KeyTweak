@@ -117,6 +117,14 @@ pub fn hide_translation_toast() {
     }
 }
 
+fn apply_theme(window: &tauri::WebviewWindow<Wry>) {
+    let theme = crate::state::global_app_state()
+        .map(|s| s.config().general.theme.clone())
+        .unwrap_or_else(|| "system".to_string());
+    let js = format!("document.documentElement.dataset.theme='{}'", theme);
+    let _ = window.eval(&js);
+}
+
 fn show_toast(
     window: &tauri::WebviewWindow<Wry>,
     height: u32,
@@ -126,6 +134,7 @@ fn show_toast(
 ) -> tauri::Result<()> {
     window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(TOAST_WIDTH, height)))?;
     position(window)?;
+    apply_theme(window);
     window.emit(event, payload)?;
     window.show()
 }

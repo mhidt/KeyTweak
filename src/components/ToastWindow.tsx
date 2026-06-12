@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   copyToClipboard,
+  getConfig,
   hideTranslationToast,
   replaceWithTranslation,
 } from "../lib/commands";
@@ -39,6 +40,12 @@ export function ToastWindow() {
   const [payload, setPayload] = useState<TranslationPayload>(EMPTY_PAYLOAD);
   const [appToast, setAppToast] = useState<AppToastPayload | null>(null);
   const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    getConfig().then((config) => {
+      document.documentElement.dataset.theme = config.general.theme;
+    });
+  }, []);
 
   useEffect(() => {
     let timeoutId: number | undefined;
@@ -107,35 +114,39 @@ export function ToastWindow() {
     }
   };
 
+  const hasContent = appToast || payload.translated;
+
+  if (!hasContent) {
+    return null;
+  }
+
   return (
     <div className="h-screen bg-background text-foreground">
       {appToast ? (
-        <div className="flex h-full flex-col justify-between overflow-hidden rounded-md bg-zinc-950 text-white shadow-lg">
-          <div className="flex-1 px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10">
-                  <Keyboard size={20} />
+        <div className="flex h-full flex-col justify-between overflow-hidden rounded-md bg-muted p-3 shadow-lg">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-background">
+                <Keyboard size={20} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  {appToast.title}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    {appToast.title}
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-400">
-                    {appToast.message}
-                  </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {appToast.message}
                 </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={hideTranslationToast}
-                aria-label="Close"
-                className="text-white hover:bg-white/10"
-              >
-                <X size={16} />
-              </Button>
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={hideTranslationToast}
+              aria-label="Close"
+              className="text-muted-foreground hover:bg-background hover:text-foreground"
+            >
+              <X size={16} />
+            </Button>
           </div>
         </div>
       ) : (
@@ -168,7 +179,7 @@ export function ToastWindow() {
               </div>
             ) : null}
             <div className="max-h-24 overflow-auto rounded-md border border-border px-3 py-2 text-sm leading-5">
-              {payload.translated || "Waiting for translation..."}
+              {payload.translated}
             </div>
           </div>
 

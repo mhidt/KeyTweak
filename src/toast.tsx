@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { replaceWithTranslation } from "./lib/commands";
+import { getConfig, replaceWithTranslation } from "./lib/commands";
 import "./index.css";
 
 interface TranslationPayload {
@@ -23,6 +23,12 @@ const HIDE_DELAY_MS = 6000;
 function Toast() {
   const [payload, setPayload] = useState<TranslationPayload | null>(null);
   const [appToast, setAppToast] = useState<AppToastPayload | null>(null);
+
+  useEffect(() => {
+    getConfig().then((config) => {
+      document.documentElement.dataset.theme = config.general.theme;
+    });
+  }, []);
 
   useEffect(() => {
     const unlistenTranslation = listen<TranslationPayload>(
@@ -79,55 +85,41 @@ function Toast() {
     }
   };
 
-  if (!payload) {
-    if (appToast) {
-      return (
-        <div className="flex h-full w-full flex-col overflow-hidden rounded-md bg-zinc-950 text-white shadow-lg">
-          <div className="flex-1 px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-white/10 text-base">
-                  ⌨
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    {appToast.title}
-                  </div>
-                  <div className="mt-1 text-xs text-zinc-400">
-                    {appToast.message}
-                  </div>
-                </div>
+  if (!payload && !appToast) {
+    return null;
+  }
+
+  if (appToast) {
+    return (
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-md bg-background p-3 text-foreground shadow-lg">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-base">
+              ⌨
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                {appToast.title}
               </div>
-              <button
-                type="button"
-                onClick={close}
-                className="rounded px-1.5 py-0.5 text-sm text-zinc-300 hover:bg-white/10 hover:text-white"
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {appToast.message}
+              </div>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={close}
+            className="rounded px-1.5 py-0.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Close"
+          >
+            ×
+          </button>
         </div>
-      );
-    }
-
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background text-xs text-muted-foreground">
-        <button
-          type="button"
-          onClick={close}
-          className="absolute right-3 top-2 rounded px-1.5 py-0.5 text-sm hover:bg-muted hover:text-foreground"
-          aria-label="Close"
-        >
-          ×
-        </button>
-        Ожидание события...
       </div>
     );
   }
 
-  const isError = payload.target_lang === "" && payload.original === "";
+  const isError = payload!.target_lang === "" && payload!.original === "";
 
   return (
     <div className="flex h-full w-full flex-col gap-2 bg-background p-3 text-foreground shadow-lg">
@@ -135,9 +127,9 @@ function Toast() {
         <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
           {isError
             ? "KeyTweak"
-            : payload.reverse
-              ? `Обратный → ${payload.target_lang.toUpperCase()}`
-              : `Перевод → ${payload.target_lang.toUpperCase()}`}
+            : payload!.reverse
+              ? `Обратный → ${payload!.target_lang.toUpperCase()}`
+              : `Перевод → ${payload!.target_lang.toUpperCase()}`}
         </div>
         <button
           type="button"
@@ -149,20 +141,20 @@ function Toast() {
         </button>
       </div>
 
-      {!isError && payload.original && (
+      {!isError && payload!.original && (
         <div
           className="line-clamp-2 text-xs text-muted-foreground"
-          title={payload.original}
+          title={payload!.original}
         >
-          {payload.original}
+          {payload!.original}
         </div>
       )}
 
       <div
         className="line-clamp-4 flex-1 overflow-hidden text-sm leading-snug"
-        title={payload.translated}
+        title={payload!.translated}
       >
-        {payload.translated}
+        {payload!.translated}
       </div>
 
       {!isError && (

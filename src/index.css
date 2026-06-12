@@ -60,6 +60,10 @@ body,
   height: 100%;
 }
 
+html {
+  background-color: hsl(var(--background));
+}
+
 body {
   margin: 0;
   font-family:
