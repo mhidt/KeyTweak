@@ -29,7 +29,7 @@ export function GeneralSettings({ config, onChange }: Props) {
         checked={config.general.run_as_admin}
         onCheckedChange={(run_as_admin) => updateGeneral({ run_as_admin })}
         label="Запускать от имени администратора"
-        description="Включите, если часто работаете с системными программами. При каждом запуске Windows будет запрашивать подтверждение администратора."
+        description="Включите, если часто работаете с системными программами (поиск, диспетчер задач и т.д.). Автозапуск будет работать без UAC-запроса."
       />
 
       <div className="space-y-2">

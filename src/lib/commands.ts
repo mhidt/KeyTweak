@@ -87,9 +87,9 @@ export function isCapsPaused() {
   return invoke<boolean>("is_caps_paused");
 }
 
-export function setAutoStart(enabled: boolean) {
+export function setAutoStart(enabled: boolean, runAsAdmin: boolean) {
   if (!inTauri()) return Promise.resolve(void enabled);
-  return invoke<void>("set_auto_start", { enabled });
+  return invoke<void>("set_auto_start", { enabled, runAsAdmin });
 }
 
 export function isAutoStart() {

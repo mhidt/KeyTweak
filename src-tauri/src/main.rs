@@ -41,15 +41,17 @@ fn main() {
             toast::set_app_handle(app.handle().clone());
             let state_inner = crate::state::global_app_state().unwrap();
             state_inner.install_keyboard_hook()?;
-            if state_inner.config().caps_lock.auto_start {
-                if let Err(error) = autostart::set_auto_start(true) {
-                    log::error!("failed to repair Windows startup entry: {error}");
-                }
-            }
-            if let Err(error) =
-                autostart::set_run_as_admin(state_inner.config().general.run_as_admin)
             {
-                log::error!("failed to apply run-as-admin setting: {error}");
+                let auto_start = state_inner.config().caps_lock.auto_start;
+                let run_as_admin = state_inner.config().general.run_as_admin;
+                if auto_start {
+                    if let Err(error) = autostart::set_auto_start(true, run_as_admin) {
+                        log::error!("failed to repair Windows startup entry: {error}");
+                    }
+                }
+                if let Err(error) = autostart::set_run_as_admin(run_as_admin) {
+                    log::error!("failed to apply run-as-admin setting: {error}");
+                }
             }
             tauri::async_runtime::block_on(state_inner.start_sidecar());
             tray::setup_tray(&app.handle())?;

@@ -1,6 +1,7 @@
 use std::{
     env, io,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use thiserror::Error;
@@ -9,9 +10,8 @@ const APP_NAME: &str = "KeyTweak";
 const RUN_KEY_PATH: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 const LAYERS_KEY_PATH: &str =
     r"Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers";
-/// Value written to the AppCompatFlags layer that makes Windows always prompt
-/// for elevation (UAC) when the executable is launched.
 const RUN_AS_ADMIN_LAYER: &str = "~ RUNASADMIN";
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Error)]
 pub enum AutoStartError {
@@ -19,16 +19,26 @@ pub enum AutoStartError {
     ExecutablePath(io::Error),
     #[error("failed to update Windows startup registry entry: {0}")]
     Registry(io::Error),
+    #[error("failed to manage Task Scheduler entry: {0}")]
+    TaskScheduler(io::Error),
 }
 
 pub type Result<T> = std::result::Result<T, AutoStartError>;
 
-pub fn set_auto_start(enabled: bool) -> Result<()> {
+pub fn set_auto_start(enabled: bool, run_as_admin: bool) -> Result<()> {
     if enabled {
         let exe_path = startup_exe_path()?;
-        set_run_entry(&exe_path)
+        if run_as_admin {
+            delete_run_entry()?;
+            set_scheduled_task(&exe_path)
+        } else {
+            delete_scheduled_task()?;
+            set_run_entry(&exe_path)
+        }
     } else {
-        delete_run_entry()
+        let _ = delete_run_entry();
+        let _ = delete_scheduled_task();
+        Ok(())
     }
 }
 
@@ -55,11 +65,9 @@ fn release_exe_path(exe_path: &Path) -> Option<PathBuf> {
 }
 
 pub fn is_auto_start() -> Result<bool> {
-    run_entry_exists()
+    Ok(run_entry_exists()? || scheduled_task_exists()?)
 }
 
-/// Marks the current executable to always run elevated (UAC prompt on every
-/// launch) by writing the AppCompatFlags "RUNASADMIN" layer, or removes it.
 pub fn set_run_as_admin(enabled: bool) -> Result<()> {
     let exe_path = startup_exe_path()?;
     if enabled {
@@ -67,6 +75,75 @@ pub fn set_run_as_admin(enabled: bool) -> Result<()> {
     } else {
         delete_run_as_admin_entry(&exe_path)
     }
+}
+
+fn schtasks() -> Command {
+    let mut cmd = Command::new("schtasks");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+fn set_scheduled_task(exe_path: &Path) -> Result<()> {
+    let quoted = format!("\"{}\"", exe_path.display());
+    let output = schtasks()
+        .args([
+            "/create",
+            "/tn",
+            APP_NAME,
+            "/tr",
+            &quoted,
+            "/sc",
+            "onlogon",
+            "/rl",
+            "highest",
+            "/f",
+        ])
+        .output()
+        .map_err(AutoStartError::TaskScheduler)?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let msg = String::from_utf8_lossy(&output.stderr);
+        Err(AutoStartError::TaskScheduler(io::Error::other(
+            format!("schtasks /create failed: {msg}"),
+        )))
+    }
+}
+
+fn delete_scheduled_task() -> Result<()> {
+    let output = schtasks()
+        .args(["/delete", "/tn", APP_NAME, "/f"])
+        .output()
+        .map_err(AutoStartError::TaskScheduler)?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("The system cannot find the file specified")
+            || stderr.contains("не найден")
+        {
+            Ok(())
+        } else {
+            Err(AutoStartError::TaskScheduler(io::Error::other(
+                format!("schtasks /delete failed: {stderr}"),
+            )))
+        }
+    }
+}
+
+fn scheduled_task_exists() -> Result<bool> {
+    let output = schtasks()
+        .args(["/query", "/tn", APP_NAME])
+        .output()
+        .map_err(AutoStartError::TaskScheduler)?;
+
+    Ok(output.status.success())
 }
 
 #[cfg(windows)]

@@ -234,8 +234,8 @@ pub fn is_caps_paused(state: State<'_, Arc<AppState>>) -> bool {
 }
 
 #[tauri::command]
-pub fn set_auto_start(enabled: bool) -> CommandResult<()> {
-    autostart::set_auto_start(enabled).map_err(|error| error.to_string())
+pub fn set_auto_start(enabled: bool, run_as_admin: bool) -> CommandResult<()> {
+    autostart::set_auto_start(enabled, run_as_admin).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

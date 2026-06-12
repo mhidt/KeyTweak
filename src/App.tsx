@@ -90,10 +90,14 @@ export function App() {
     setStatus("");
     try {
       await setConfig(config);
-      if (savedConfig?.caps_lock.auto_start !== config.caps_lock.auto_start) {
-        await setAutoStart(config.caps_lock.auto_start);
+      const autoStartChanged =
+        savedConfig?.caps_lock.auto_start !== config.caps_lock.auto_start;
+      const runAsAdminChanged =
+        savedConfig?.general.run_as_admin !== config.general.run_as_admin;
+      if (autoStartChanged || runAsAdminChanged) {
+        await setAutoStart(config.caps_lock.auto_start, config.general.run_as_admin);
       }
-      if (savedConfig?.general.run_as_admin !== config.general.run_as_admin) {
+      if (runAsAdminChanged) {
         await setRunAsAdmin(config.general.run_as_admin);
       }
       setSavedConfig(config);
