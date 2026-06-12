@@ -12,6 +12,49 @@ const MENU_PAUSE_ID: &str = "pause_caps";
 const MENU_EXIT_ID: &str = "exit";
 const TOOLTIP: &str = "KeyTweak";
 
+fn is_system_dark_theme() -> bool {
+    use windows::Win32::System::Registry::*;
+
+    unsafe {
+        let mut h_key: HKEY = Default::default();
+        if RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            windows::core::w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            0,
+            KEY_READ,
+            &mut h_key,
+        )
+        .is_err()
+        {
+            return false;
+        }
+
+        let mut data: u32 = 1;
+        let mut data_size: u32 = std::mem::size_of::<u32>() as u32;
+        let result = RegQueryValueExW(
+            h_key,
+            windows::core::w!("SystemUsesLightTheme"),
+            None,
+            None,
+            Some(&mut data as *mut u32 as *mut u8),
+            Some(&mut data_size),
+        );
+
+        let _ = RegCloseKey(h_key);
+
+        result.is_ok() && data == 0
+    }
+}
+
+pub fn tray_icon() -> Image<'static> {
+    if is_system_dark_theme() {
+        Image::from_bytes(include_bytes!("../icons/icon-light.ico"))
+    } else {
+        Image::from_bytes(include_bytes!("../icons/icon.ico"))
+    }
+    .expect("failed to load tray icon")
+}
+
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = build_menu(app)?;
 
@@ -40,35 +83,12 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-fn tray_icon() -> Image<'static> {
-    const SIZE: u32 = 32;
-    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
-
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let border = !(4..28).contains(&x) || !(4..28).contains(&y);
-            let key_stem = (8..=13).contains(&x) && (8..=24).contains(&y);
-            let key_top = (8..=24).contains(&x) && (8..=13).contains(&y);
-            let pixel_on = border || key_stem || key_top;
-
-            if pixel_on {
-                let index = ((y * SIZE + x) * 4) as usize;
-                rgba[index] = 24;
-                rgba[index + 1] = 24;
-                rgba[index + 2] = 27;
-                rgba[index + 3] = 255;
-            }
-        }
-    }
-
-    Image::new_owned(rgba, SIZE, SIZE)
-}
-
 pub fn rebuild_tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let menu = build_menu(app)?;
         tray.set_menu(Some(menu))?;
         tray.set_tooltip(Some(&TOOLTIP))?;
+        tray.set_icon(Some(tray_icon()))?;
     }
 
     Ok(())
